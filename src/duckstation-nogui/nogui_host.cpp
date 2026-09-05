@@ -3,6 +3,7 @@
 
 #include "nogui_host.h"
 #include "nogui_platform.h"
+#include "switch_paths.h"
 
 #include "scmversion/scmversion.h"
 
@@ -150,6 +151,41 @@ static AsyncOpProgressCallback* s_async_op_progress = nullptr;
 
 #ifdef __SWITCH__
 std::string switch_program_path;
+static std::string s_switch_return_nro{GBAStation::SwitchPaths::ReturnNro};
+static bool s_switch_return_to_nro = true;
+static std::atomic_bool s_switch_boot_failed{false};
+
+static std::string QuoteSwitchArg(const std::string& value)
+{
+  std::string quoted;
+  quoted.reserve(value.size() + 2);
+  quoted.push_back('"');
+  for (const char ch : value)
+  {
+    if (ch == '"' || ch == '\\')
+      quoted.push_back('\\');
+    quoted.push_back(ch);
+  }
+  quoted.push_back('"');
+  return quoted;
+}
+
+static bool SetSwitchReturnNro()
+{
+  if (!s_switch_return_to_nro || s_switch_return_nro.empty() || !envHasNextLoad())
+    return false;
+
+  const std::string argv = QuoteSwitchArg(s_switch_return_nro);
+  const Result rc = envSetNextLoad(s_switch_return_nro.c_str(), argv.c_str());
+  if (R_FAILED(rc))
+  {
+    Log_ErrorPrintf("Failed to chain back to GBAStation NRO '%s': 0x%x", s_switch_return_nro.c_str(), rc);
+    return false;
+  }
+
+  Log_InfoPrintf("Configured return to GBAStation NRO: %s", s_switch_return_nro.c_str());
+  return true;
+}
 #endif
 
 //////////////////////////////////////////////////////////////////////////
@@ -183,8 +219,8 @@ bool NoGUIHost::SetCriticalFolders()
 bool NoGUIHost::ShouldUsePortableMode()
 {
   // Check whether portable.ini exists in the program directory.
-  return (FileSystem::FileExists(Path::Combine(EmuFolders::AppRoot, "portable.txt").c_str()) ||
-          FileSystem::FileExists(Path::Combine(EmuFolders::AppRoot, "settings.ini").c_str()));
+  return (FileSystem::FileExists(Path::Combine(EmuFolders::AppRoot, GBAStation::SwitchPaths::PortableMarker).c_str()) ||
+          FileSystem::FileExists(Path::Combine(EmuFolders::AppRoot, GBAStation::SwitchPaths::SettingsFile).c_str()));
 }
 
 void NoGUIHost::SetAppRoot()
@@ -198,7 +234,7 @@ void NoGUIHost::SetAppRoot()
 void NoGUIHost::SetResourcesDirectory()
 {
 #ifdef NDEBUG
-  EmuFolders::Resources = "romfs:/resources";
+  EmuFolders::Resources = GBAStation::SwitchPaths::RomfsResources;
 #else
   EmuFolders::Resources = Path::Combine(EmuFolders::AppRoot, "resources");
 #endif
@@ -210,7 +246,7 @@ void NoGUIHost::SetDataDirectory()
   // Keep writable emulator data separate from the NRO installation. This
   // remains stable when the application is launched from a different SD-card
   // directory or through a title override.
-  EmuFolders::DataRoot = "sdmc:/GBAStation/duckstation";
+  EmuFolders::DataRoot = GBAStation::SwitchPaths::DataRoot;
   if (!FileSystem::EnsureDirectoryExists(EmuFolders::DataRoot.c_str(), false))
     Log_ErrorPrintf("Failed to create Switch data directory: %s", EmuFolders::DataRoot.c_str());
   return;
@@ -245,11 +281,11 @@ bool NoGUIHost::InitializeConfig(std::string settings_filename)
     return false;
 
   if (settings_filename.empty())
-    settings_filename = Path::Combine(EmuFolders::DataRoot, "settings.ini");
+    settings_filename = Path::Combine(EmuFolders::DataRoot, GBAStation::SwitchPaths::SettingsFile);
 
 #ifdef __SWITCH__
   // Keep a persistent log on the SD card even when no settings file exists yet.
-  const std::string switch_log_path = Path::Combine(EmuFolders::DataRoot, "duckstation.log");
+  const std::string switch_log_path = Path::Combine(EmuFolders::DataRoot, GBAStation::SwitchPaths::LogFile);
   Log::SetFileOutputParams(true, switch_log_path.c_str(), true);
   Log_InfoPrintf("Switch log file: %s", switch_log_path.c_str());
 #endif
@@ -477,8 +513,12 @@ void NoGUIHost::StartSystem(SystemBootParameters params)
     Error error;
     if (!System::BootSystem(std::move(params), &error))
     {
+#ifdef __SWITCH__
+      s_switch_boot_failed.store(true, std::memory_order_release);
+#endif
       Host::ReportErrorAsync(TRANSLATE_SV("System", "Error"),
                              fmt::format(TRANSLATE_FS("System", "Failed to boot system: {}"), error.GetDescription()));
+      NoGUIHost::StopRunning();
     }
   });
 }
@@ -659,6 +699,9 @@ void NoGUIHost::CPUThreadEntryPoint()
   // input source setup must happen on emu thread
   if (!System::Internal::ProcessStartup())
   {
+#ifdef __SWITCH__
+    s_switch_boot_failed.store(true, std::memory_order_release);
+#endif
     g_nogui_window->QuitMessageLoop();
     return;
   }
@@ -676,6 +719,9 @@ void NoGUIHost::CPUThreadEntryPoint()
   }
   else
   {
+#ifdef __SWITCH__
+    s_switch_boot_failed.store(true, std::memory_order_release);
+#endif
     g_nogui_window->ReportError("Error", "Failed to open host display.");
   }
 
@@ -1047,13 +1093,18 @@ void NoGUIHost::PrintCommandLineHelp(const char* progname)
   std::fprintf(stderr, "  -fullscreen: Enters fullscreen mode immediately after starting.\n");
   std::fprintf(stderr, "  -nofullscreen: Prevents fullscreen mode from triggering if enabled.\n");
 #ifdef __SWITCH__
-  std::fprintf(stderr, "  -portable: Ignored on Switch; data is stored in sdmc:/GBAStation/duckstation.\n");
+  std::fprintf(stderr, "  -portable: Ignored on Switch; data is stored in %.*s.\n",
+               static_cast<int>(GBAStation::SwitchPaths::DataRoot.size()), GBAStation::SwitchPaths::DataRoot.data());
 #else
   std::fprintf(stderr, "  -portable: Forces \"portable mode\", data in same directory.\n");
 #endif
   std::fprintf(stderr, "  -settings <filename>: Loads a custom settings configuration from the\n"
                        "    specified filename. Default settings applied if file not found.\n");
   std::fprintf(stderr, "  -earlyconsole: Creates console as early as possible, for logging.\n");
+#ifdef __SWITCH__
+  std::fprintf(stderr, "  --return <nro>: Loads the specified NRO after a normal game exit.\n");
+  std::fprintf(stderr, "  --exit-to-home: Returns to HOME instead of loading a parent NRO.\n");
+#endif
   std::fprintf(stderr, "  --: Signals that no more arguments will follow and the remaining\n"
                        "    parameters make up the filename. Use when the filename contains\n"
                        "    spaces or starts with a dash.\n");
@@ -1179,6 +1230,25 @@ bool NoGUIHost::ParseCommandLineParametersAndInitializeConfig(int argc, char* ar
         InitializeEarlyConsole();
         continue;
       }
+#ifdef __SWITCH__
+      else if (CHECK_ARG_PARAM("--return"))
+      {
+        s_switch_return_nro = argv[++i];
+        continue;
+      }
+      else if (CHECK_ARG("--exit-to-home"))
+      {
+        s_switch_return_to_nro = false;
+        continue;
+      }
+      else if (CHECK_ARG_PARAM("--gbastation-session"))
+      {
+        // The launcher may attach a session token. DuckStation does not need
+        // to consume it yet, but it must not be mistaken for a boot filename.
+        ++i;
+        continue;
+      }
+#endif
       else if (CHECK_ARG("--"))
       {
         no_more_args = true;
@@ -1198,6 +1268,11 @@ bool NoGUIHost::ParseCommandLineParametersAndInitializeConfig(int argc, char* ar
       autoboot->filename += ' ';
     AutoBoot(autoboot)->filename += argv[i];
   }
+
+#ifdef __SWITCH__
+  if (autoboot && !autoboot->filename.empty() && !autoboot->override_fast_boot.has_value())
+    autoboot->override_fast_boot = true;
+#endif
 
   // To do anything useful, we need the config initialized.
   if (!NoGUIHost::InitializeConfig(std::move(settings_filename)))
@@ -1443,8 +1518,22 @@ int main(int argc, char* argv[])
     return EXIT_FAILURE;
 
   std::optional<SystemBootParameters> autoboot;
+#ifdef __SWITCH__
+  // No arguments means the standalone DuckStation frontend. A parent NRO is
+  // only expected when GBAStation supplied a game launch request.
+  if (argc == 1)
+    s_switch_return_to_nro = false;
+#endif
   if (!NoGUIHost::ParseCommandLineParametersAndInitializeConfig(argc, argv, autoboot))
     return EXIT_FAILURE;
+
+#ifdef __SWITCH__
+  if (argc > 1 && (!autoboot || autoboot->filename.empty()))
+  {
+    g_nogui_window->ReportError("Error", "A game path is required when launched by GBAStation.");
+    return EXIT_FAILURE;
+  }
+#endif
 
   // the rest of initialization happens on the CPU thread.
   NoGUIHost::HookSignals();
@@ -1458,10 +1547,20 @@ int main(int argc, char* argv[])
   NoGUIHost::CancelAsyncOp();
   NoGUIHost::StopCPUThread();
 
-  // Ensure log is flushed.
-  Log::SetFileOutputParams(false, nullptr);
-
   NoGUIHost::s_base_settings_interface.reset();
   g_nogui_window.reset();
+
+#ifdef __SWITCH__
+  const int exit_code = s_switch_boot_failed.load(std::memory_order_acquire) ? EXIT_FAILURE : EXIT_SUCCESS;
+  const bool return_requested = s_switch_return_to_nro;
+  const bool return_configured = (exit_code == EXIT_SUCCESS && return_requested) ? SetSwitchReturnNro() : !return_requested;
+
+  // Ensure log is flushed after the chainload request has been recorded.
+  Log::SetFileOutputParams(false, nullptr);
+  return (exit_code == EXIT_SUCCESS && return_requested && !return_configured) ? EXIT_FAILURE : exit_code;
+#else
+  // Ensure log is flushed.
+  Log::SetFileOutputParams(false, nullptr);
   return EXIT_SUCCESS;
+#endif
 }

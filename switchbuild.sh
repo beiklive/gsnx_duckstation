@@ -6,7 +6,7 @@ PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   printf 'Usage: %s [build-directory]\n' "$0"
-  printf '\nBuilds the DuckStation Nintendo Switch frontend and emits duckstation.nro.\n'
+  printf '\nBuilds the GBAStation DuckStation core and emits GBAStationDuckStationStub.nro.\n'
   exit 0
 fi
 
@@ -90,7 +90,7 @@ printf 'Configuring DuckStation for Nintendo Switch...\n'
 printf 'Building NRO with %s job(s)...\n' "${JOB_COUNT}"
 "${CMAKE}" --build "${BUILD_DIR}" --parallel "${JOB_COUNT}"
 
-NRO="${BUILD_DIR}/duckstation.nro"
+NRO="${BUILD_DIR}/GBAStationDuckStationStub.nro"
 if [[ ! -f "${NRO}" ]]; then
   printf 'error: build completed but NRO was not produced: %s\n' "${NRO}" >&2
   exit 1

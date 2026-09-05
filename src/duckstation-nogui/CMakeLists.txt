@@ -2,6 +2,7 @@ add_executable(duckstation-nogui
   nogui_host.cpp
   nogui_host.h
   nogui_platform.h
+  switch_paths.h
 )
 
 target_precompile_headers(duckstation-nogui PRIVATE "pch.h")
@@ -19,9 +20,9 @@ if(NINTENDO_SWITCH)
   )
   target_link_libraries(duckstation-nogui PUBLIC "${NX_LIBRARIES}")
 
-  nx_generate_nacp (duckstation.nacp
-    NAME    "duckstation"
-    AUTHOR  "Stenzek, RSDuck (port)"
+  nx_generate_nacp (GBAStationDuckStationStub.nacp
+    NAME    "GBAStation DuckStation Stub"
+    AUTHOR  "GBAStation"
     VERSION "pre-release 1"
   )
 
@@ -30,14 +31,14 @@ if(NINTENDO_SWITCH)
 
   if (CMAKE_BUILD_TYPE STREQUAL Debug)
     nx_create_nro(duckstation-nogui
-      OUTPUT ${CMAKE_BINARY_DIR}/duckstation.nro
-      NACP  duckstation.nacp
+      OUTPUT ${CMAKE_BINARY_DIR}/GBAStationDuckStationStub.nro
+      NACP  GBAStationDuckStationStub.nacp
       ICON  "${CMAKE_SOURCE_DIR}/extras/icons/icon-switch.jpg"
     )
   else()
     nx_create_nro(duckstation-nogui
-      OUTPUT ${CMAKE_BINARY_DIR}/duckstation.nro
-      NACP  duckstation.nacp
+      OUTPUT ${CMAKE_BINARY_DIR}/GBAStationDuckStationStub.nro
+      NACP  GBAStationDuckStationStub.nacp
       ICON  "${CMAKE_SOURCE_DIR}/extras/icons/icon-switch.jpg"
       ROMFS ${CMAKE_BINARY_DIR}/romfs
     )

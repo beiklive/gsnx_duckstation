@@ -193,7 +193,7 @@ NoGUIHost::CPUThreadEntryPoint
 
 按 [`README_Switch.md`](../README_Switch.md) 的 Switch CMake/Ninja 配置完成构建后，当前工作区已有：
 
-- [`build/switch/duckstation.nro`](../build/switch/duckstation.nro)
+- [`build-switch-ninja/GBAStationDuckStationStub.nro`](../build-switch-ninja/GBAStationDuckStationStub.nro)
 - 大小：27,010,817 字节
 - 文件头：`NRO0`
 - 增量 `ninja`：`no work to do`

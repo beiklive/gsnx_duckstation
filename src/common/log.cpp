@@ -415,7 +415,12 @@ void Log::FileOutputLogCallback(void* pUserParam, const char* channelName, const
 
   FormatLogMessageAndPrint(
     channelName, functionName, level, message, true, false, true,
-    [](const std::string_view& message) { std::fwrite(message.data(), 1, message.size(), s_file_handle.get()); });
+    [](const std::string_view& message) {
+      std::fwrite(message.data(), 1, message.size(), s_file_handle.get());
+      // Keep startup and renderer failures available even if the process exits
+      // before the normal shutdown path can close the log file.
+      std::fflush(s_file_handle.get());
+    });
 }
 
 void Log::SetFileOutputParams(bool enabled, const char* filename, bool timestamps /* = true */)

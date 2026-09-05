@@ -812,9 +812,17 @@ void Settings::UpdateLogSettings()
   Log::SetConsoleOutputParams(log_to_console, log_timestamps);
   Log::SetDebugOutputParams(log_to_debug);
 
-  if (log_to_file)
+#ifdef __SWITCH__
+  // Switch has no desktop debug console. Always preserve a readable SD-card
+  // log so renderer and driver failures can be diagnosed after a crash.
+  const bool enable_file_logging = true;
+#else
+  const bool enable_file_logging = log_to_file;
+#endif
+
+  if (enable_file_logging)
   {
-    Log::SetFileOutputParams(log_to_file, Path::Combine(EmuFolders::DataRoot, "duckstation.log").c_str(),
+    Log::SetFileOutputParams(true, Path::Combine(EmuFolders::DataRoot, "duckstation.log").c_str(),
                              log_timestamps);
   }
   else
@@ -840,7 +848,11 @@ void Settings::SetDefaultControllerConfig(SettingsInterface& si)
     si.SetStringValue(section.c_str(), "Type", Controller::GetDefaultPadType(i));
   }
 
-#ifndef __ANDROID__
+#ifdef __SWITCH__
+  // libnx exposes controllers through the Switch input source. The device
+  // identifier used by its bindings is P0, rather than the source name.
+  InputManager::MapController(si, 0, InputManager::GetGenericBindingMapping("P0"));
+#elif !defined(__ANDROID__)
   // Use the automapper to set this up.
   InputManager::MapController(si, 0, InputManager::GetGenericBindingMapping("Keyboard"));
 #endif

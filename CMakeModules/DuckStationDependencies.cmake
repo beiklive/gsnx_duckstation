@@ -13,6 +13,15 @@ if (NOT NINTENDO_SWITCH)
   find_package(SDL2 2.30.2 REQUIRED)
 endif()
 find_package(Zstd 1.5.5 REQUIRED)
+# Some Switch portlib releases expose lowercase zstd targets while the
+# project links the upstream Zstd::Zstd target name.
+if(NOT TARGET Zstd::Zstd)
+  if(TARGET zstd::libzstd)
+    add_library(Zstd::Zstd ALIAS zstd::libzstd)
+  elseif(TARGET zstd::libzstd_static)
+    add_library(Zstd::Zstd ALIAS zstd::libzstd_static)
+  endif()
+endif()
 find_package(WebP REQUIRED) # v1.3.2, spews an error on Linux because no pkg-config.
 find_package(ZLIB REQUIRED) # 1.3, but Mac currently doesn't use it.
 if (NOT NINTENDO_SWITCH)

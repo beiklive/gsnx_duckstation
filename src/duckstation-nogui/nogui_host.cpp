@@ -237,6 +237,13 @@ bool NoGUIHost::InitializeConfig(std::string settings_filename)
   if (settings_filename.empty())
     settings_filename = Path::Combine(EmuFolders::DataRoot, "settings.ini");
 
+#ifdef __SWITCH__
+  // Keep a persistent log on the SD card even when no settings file exists yet.
+  const std::string switch_log_path = Path::Combine(EmuFolders::DataRoot, "duckstation.log");
+  Log::SetFileOutputParams(true, switch_log_path.c_str(), true);
+  Log_InfoPrintf("Switch log file: %s", switch_log_path.c_str());
+#endif
+
   Log_InfoPrintf("Loading config from %s.", settings_filename.c_str());
   s_base_settings_interface = std::make_unique<INISettingsInterface>(std::move(settings_filename));
   Host::Internal::SetBaseSettingsLayer(s_base_settings_interface.get());

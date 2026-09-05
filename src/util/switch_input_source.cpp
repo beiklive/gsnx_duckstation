@@ -3,6 +3,9 @@
 #include "core/host.h"
 
 #include "common/bitutils.h"
+#include "common/log.h"
+
+Log_SetChannel(SwitchInputSource);
 
 static const char* s_switch_button_names[] = {
   "A",     "B",     "X",        "Y",      "LStick",    "RStick",   "L",       "R",       "ZL",    "ZR",
@@ -57,6 +60,7 @@ bool SwitchInputSource::Initialize(SettingsInterface& si, std::unique_lock<std::
   }
   hidInitializeVibrationDevices(&m_controllers[0].vibration_handles[2], 2, HidNpadIdType_Handheld,
                                            HidNpadStyleTag_NpadHandheld);
+  Log_InfoPrintf("Switch input source initialized for %u controller slots.", NUM_CONTROLLERS);
   return true;
 }
 void SwitchInputSource::UpdateSettings(SettingsInterface& si, std::unique_lock<std::mutex>& settings_lock) {}
@@ -79,13 +83,17 @@ void SwitchInputSource::PollEvents()
     {
       std::string ident(StringUtil::StdStringFromFormat("P%u", i));
       if (!m_controllers[i].connected)
+      {
+        Log_InfoPrintf("Switch controller %s connected.", ident.c_str());
         Host::OnInputDeviceConnected(ident, ident);
+      }
 
       UpdateState(i);
     }
     else if (m_controllers[i].connected)
     {
       std::string ident(StringUtil::StdStringFromFormat("P%u", i));
+      Log_InfoPrintf("Switch controller %s disconnected.", ident.c_str());
       Host::OnInputDeviceDisconnected(ident);
     }
 
@@ -155,6 +163,13 @@ std::vector<InputBindingKey> SwitchInputSource::EnumerateMotors()
 
 bool SwitchInputSource::GetGenericBindingMapping(const std::string_view& device, GenericInputBindingMapping* mapping)
 {
+  if (device.size() != 2 || device[0] != 'P' || !isdigit(static_cast<unsigned char>(device[1])))
+    return false;
+
+  const u32 controller = static_cast<u32>(device[1] - '0');
+  if (controller >= NUM_CONTROLLERS)
+    return false;
+
   for (u32 i = 0; i < NUM_AXIS; i++)
   {
     mapping->emplace_back(s_switch_generic_axis[i][0],

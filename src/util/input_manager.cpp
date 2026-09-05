@@ -127,6 +127,10 @@ static void LoadMacroButtonConfig(SettingsInterface& si, const std::string& sect
 static void ApplyMacroButton(u32 pad, const MacroButton& mb);
 static void UpdateMacroButtons();
 
+#ifdef __SWITCH__
+static void MigrateSwitchControllerBindings(SettingsInterface& si);
+#endif
+
 static void UpdateInputSourceState(SettingsInterface& si, std::unique_lock<std::mutex>& settings_lock,
                                    InputSourceType type, std::unique_ptr<InputSource> (*factory_function)());
 } // namespace InputManager
@@ -607,6 +611,9 @@ static std::array<const char*, static_cast<u32>(InputSourceType::Count)> s_input
 #endif
 #ifdef __ANDROID__
   "Android",
+#endif
+#ifdef __SWITCH__
+  "Switch",
 #endif
 }};
 
@@ -1287,6 +1294,9 @@ void InputManager::SetDefaultSourceConfig(SettingsInterface& si)
   si.SetBoolValue("InputSources", "SDLControllerEnhancedMode", false);
   si.SetBoolValue("InputSources", "XInput", false);
   si.SetBoolValue("InputSources", "RawInput", false);
+#ifdef __SWITCH__
+  si.SetBoolValue("InputSources", "Switch", true);
+#endif
 }
 
 void InputManager::ClearPortBindings(SettingsInterface& si, u32 port)
@@ -1723,8 +1733,42 @@ bool InputManager::DoEventHook(InputBindingKey key, float value)
 // Binding Updater
 // ------------------------------------------------------------------------
 
+#ifdef __SWITCH__
+void InputManager::MigrateSwitchControllerBindings(SettingsInterface& si)
+{
+  const std::string section(Controller::GetSettingsSection(0));
+  const std::string up_binding(si.GetStringValue(section.c_str(), "Up", ""));
+  if (!up_binding.starts_with("Keyboard/"))
+    return;
+
+  const GenericInputBindingMapping mapping(GetGenericBindingMapping("P0"));
+  if (mapping.empty())
+  {
+    Log_ErrorPrintf("(InputManager) Unable to migrate Switch controller bindings: P0 mapping is unavailable.");
+    return;
+  }
+
+  if (MapController(si, 0, mapping))
+  {
+    si.SetBoolValue("InputSources", "Switch", true);
+    Log_InfoPrintf("(InputManager) Migrated Pad1 bindings from Keyboard to Switch controller P0.");
+  }
+}
+#endif
+
 void InputManager::ReloadBindings(SettingsInterface& si, SettingsInterface& binding_si)
 {
+#ifdef __SWITCH__
+  // During the first settings load there is no input layer yet, so the
+  // binding interface is the read-only layered interface. Migrate the base
+  // INI layer in that case; input profiles remain writable and are migrated
+  // in place.
+  SettingsInterface* migration_si = &binding_si;
+  if (migration_si == Host::GetSettingsInterface())
+    migration_si = Host::Internal::GetBaseSettingsLayer();
+  MigrateSwitchControllerBindings(*migration_si);
+#endif
+
   PauseVibration();
 
   std::unique_lock lock(s_binding_map_write_lock);
@@ -1904,6 +1948,16 @@ GenericInputBindingMapping InputManager::GetGenericBindingMapping(const std::str
         break;
     }
   }
+
+#ifdef __SWITCH__
+  // Default settings are created before ReloadSources(), so provide the
+  // stateless Switch mapping even when the live source is not initialized yet.
+  if (mapping.empty() && device.size() == 2 && device[0] == 'P')
+  {
+    std::unique_ptr<InputSource> source(InputSource::CreateSwitchSource());
+    source->GetGenericBindingMapping(device, &mapping);
+  }
+#endif
 
   return mapping;
 }

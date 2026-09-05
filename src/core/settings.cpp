@@ -1825,7 +1825,11 @@ std::string EmuFolders::UserResources;
 
 void EmuFolders::SetDefaults()
 {
+#ifdef __SWITCH__
+  Bios = "sdmc:/GBAStation/bios/ps1";
+#else
   Bios = Path::Combine(DataRoot, "bios");
+#endif
   Cache = Path::Combine(DataRoot, "cache");
   Cheats = Path::Combine(DataRoot, "cheats");
   Covers = Path::Combine(DataRoot, "covers");
@@ -1854,7 +1858,13 @@ static std::string LoadPathFromSettings(SettingsInterface& si, const std::string
 
 void EmuFolders::LoadConfig(SettingsInterface& si)
 {
+#ifdef __SWITCH__
+  // PS1 BIOS files are shared with the other GBAStation frontends and live
+  // outside DuckStation's private writable data directory.
+  Bios = "sdmc:/GBAStation/bios/ps1";
+#else
   Bios = LoadPathFromSettings(si, DataRoot, "BIOS", "SearchDirectory", "bios");
+#endif
   Cache = LoadPathFromSettings(si, DataRoot, "Folders", "Cache", "cache");
   Cheats = LoadPathFromSettings(si, DataRoot, "Folders", "Cheats", "cheats");
   Covers = LoadPathFromSettings(si, DataRoot, "Folders", "Covers", "covers");
@@ -1887,7 +1897,11 @@ void EmuFolders::LoadConfig(SettingsInterface& si)
 void EmuFolders::Save(SettingsInterface& si)
 {
   // convert back to relative
+#ifdef __SWITCH__
+  si.SetStringValue("BIOS", "SearchDirectory", "sdmc:/GBAStation/bios/ps1");
+#else
   si.SetStringValue("BIOS", "SearchDirectory", Path::MakeRelative(Bios, DataRoot).c_str());
+#endif
   si.SetStringValue("Folders", "Cache", Path::MakeRelative(Cache, DataRoot).c_str());
   si.SetStringValue("Folders", "Cheats", Path::MakeRelative(Cheats, DataRoot).c_str());
   si.SetStringValue("Folders", "Covers", Path::MakeRelative(Covers, DataRoot).c_str());

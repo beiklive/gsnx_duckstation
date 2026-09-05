@@ -206,6 +206,16 @@ void NoGUIHost::SetResourcesDirectory()
 
 void NoGUIHost::SetDataDirectory()
 {
+#ifdef __SWITCH__
+  // Keep writable emulator data separate from the NRO installation. This
+  // remains stable when the application is launched from a different SD-card
+  // directory or through a title override.
+  EmuFolders::DataRoot = "sdmc:/GBAStation/duckstation";
+  if (!FileSystem::EnsureDirectoryExists(EmuFolders::DataRoot.c_str(), false))
+    Log_ErrorPrintf("Failed to create Switch data directory: %s", EmuFolders::DataRoot.c_str());
+  return;
+#endif
+
   // Already set, e.g. by -portable.
   if (!EmuFolders::DataRoot.empty())
     return;
@@ -1036,7 +1046,11 @@ void NoGUIHost::PrintCommandLineHelp(const char* progname)
   std::fprintf(stderr, "  -exe <filename>: Boot the specified exe instead of loading from disc.\n");
   std::fprintf(stderr, "  -fullscreen: Enters fullscreen mode immediately after starting.\n");
   std::fprintf(stderr, "  -nofullscreen: Prevents fullscreen mode from triggering if enabled.\n");
+#ifdef __SWITCH__
+  std::fprintf(stderr, "  -portable: Ignored on Switch; data is stored in sdmc:/GBAStation/duckstation.\n");
+#else
   std::fprintf(stderr, "  -portable: Forces \"portable mode\", data in same directory.\n");
+#endif
   std::fprintf(stderr, "  -settings <filename>: Loads a custom settings configuration from the\n"
                        "    specified filename. Default settings applied if file not found.\n");
   std::fprintf(stderr, "  -earlyconsole: Creates console as early as possible, for logging.\n");

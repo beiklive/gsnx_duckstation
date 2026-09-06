@@ -28,6 +28,10 @@
 #include <mutex>
 #include <unordered_map>
 
+#ifdef __SWITCH__
+#include <switch.h>
+#endif
+
 Log_SetChannel(ImGuiManager);
 
 namespace ImGuiManager {
@@ -87,6 +91,7 @@ static std::vector<u8> s_standard_font_data;
 static std::vector<u8> s_fixed_font_data;
 static std::vector<u8> s_icon_fa_font_data;
 static std::vector<u8> s_icon_pf_font_data;
+static std::vector<u8> s_switch_chinese_font_data;
 
 static float s_window_width;
 static float s_window_height;
@@ -520,6 +525,35 @@ bool ImGuiManager::LoadFontData()
     s_icon_pf_font_data = std::move(font_data.value());
   }
 
+#ifdef __SWITCH__
+  if (s_switch_chinese_font_data.empty())
+  {
+    PlFontData font_data{};
+    const Result init_result = plInitialize(PlServiceType_User);
+    if (R_SUCCEEDED(init_result))
+    {
+      const Result font_result = plGetSharedFontByType(&font_data, PlSharedFontType_ChineseSimplified);
+      if (R_SUCCEEDED(font_result) && font_data.address && font_data.size != 0)
+      {
+        const auto* begin = static_cast<const u8*>(font_data.address);
+        s_switch_chinese_font_data.assign(begin, begin + font_data.size);
+        Log_InfoPrintf("Loaded Switch shared Simplified Chinese font (%u bytes).", font_data.size);
+      }
+      else
+      {
+        Log_WarningPrintf("Failed to load Switch shared Simplified Chinese font: 0x%08X",
+                          static_cast<unsigned>(font_result));
+      }
+      plExit();
+    }
+    else
+    {
+      Log_WarningPrintf("Failed to initialize Switch pl:u service: 0x%08X",
+                        static_cast<unsigned>(init_result));
+    }
+  }
+#endif
+
   return true;
 }
 
@@ -547,9 +581,29 @@ ImFont* ImGuiManager::AddTextFont(float size)
 
   ImFontConfig cfg;
   cfg.FontDataOwnedByAtlas = false;
-  return ImGui::GetIO().Fonts->AddFontFromMemoryTTF(s_standard_font_data.data(),
-                                                    static_cast<int>(s_standard_font_data.size()), size, &cfg,
-                                                    s_font_range.empty() ? default_ranges : s_font_range.data());
+  ImFont* font = ImGui::GetIO().Fonts->AddFontFromMemoryTTF(
+    s_standard_font_data.data(), static_cast<int>(s_standard_font_data.size()), size, &cfg,
+    s_font_range.empty() ? default_ranges : s_font_range.data());
+  if (!font)
+    return nullptr;
+
+#ifdef __SWITCH__
+  if (!s_switch_chinese_font_data.empty())
+  {
+    ImFontConfig chinese_cfg;
+    chinese_cfg.MergeMode = true;
+    chinese_cfg.PixelSnapH = true;
+    chinese_cfg.FontDataOwnedByAtlas = false;
+    if (!ImGui::GetIO().Fonts->AddFontFromMemoryTTF(
+          s_switch_chinese_font_data.data(), static_cast<int>(s_switch_chinese_font_data.size()), size,
+          &chinese_cfg, ImGui::GetIO().Fonts->GetGlyphRangesChineseSimplifiedCommon()))
+    {
+      return nullptr;
+    }
+  }
+#endif
+
+  return font;
 }
 
 ImFont* ImGuiManager::AddFixedFont(float size)

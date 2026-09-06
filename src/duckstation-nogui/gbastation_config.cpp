@@ -141,66 +141,6 @@ static void SetFloat(SettingsInterface& settings, const Values& values, std::ini
   }
 }
 
-static std::string SwitchBinding(std::string value)
-{
-  if (value.empty() || value == "none")
-    return {};
-
-  static constexpr struct {
-    const char* name;
-    const char* binding;
-  } kBindings[] = {
-    {"PAD_A", "P0/A"},       {"PAD_B", "P0/B"},         {"PAD_X", "P0/X"},
-    {"PAD_Y", "P0/Y"},       {"PAD_LB", "P0/L"},        {"PAD_RB", "P0/R"},
-    {"PAD_LT", "P0/ZL"},     {"PAD_RT", "P0/ZR"},       {"PAD_LSB", "P0/LStick"},
-    {"PAD_RSB", "P0/RStick"}, {"PAD_BACK", "P0/Minus"}, {"PAD_START", "P0/Plus"},
-    {"PAD_LEFT", "P0/DPadLeft"}, {"PAD_UP", "P0/DPadUp"},
-    {"PAD_RIGHT", "P0/DPadRight"}, {"PAD_DOWN", "P0/DPadDown"},
-  };
-
-  for (const auto& entry : kBindings)
-  {
-    if (value == entry.name)
-      return entry.binding;
-  }
-  return {};
-}
-
-static std::string SwitchChord(const std::string& value)
-{
-  std::string result;
-  size_t start = 0;
-  while (start <= value.size())
-  {
-    const size_t end = value.find('+', start);
-    const std::string part = value.substr(start, end == std::string::npos ? std::string::npos : end - start);
-    const std::string converted = SwitchBinding(part);
-    if (!converted.empty())
-    {
-      if (!result.empty())
-        result.push_back('&');
-      result += converted;
-    }
-    if (end == std::string::npos)
-      break;
-    start = end + 1;
-  }
-  return result;
-}
-
-static void SetBinding(SettingsInterface& settings, const Values& values, const char* source_key,
-                       const char* section, const char* key)
-{
-  const auto it = values.find(source_key);
-  if (it == values.end())
-    return;
-  const std::string converted = SwitchChord(it->second);
-  if (converted.empty())
-    settings.DeleteValue(section, key);
-  else
-    settings.SetStringValue(section, key, converted.c_str());
-}
-
 } // namespace
 
 bool Load(Values* values, std::string* loaded_path)
@@ -291,23 +231,6 @@ void ApplyCoreSettings(const Values& values, SettingsInterface& settings)
   SetString(settings, values, {"core.ps1.logLevel", "ps1.logLevel"}, "Logging", "LogLevel");
   SetBool(settings, values, {"core.ps1.ttyLogging", "ps1.ttyLogging"}, "BIOS", "TTYLogging");
   SetBool(settings, values, {"core.ps1.fastBoot", "ps1.fastBoot"}, "BIOS", "PatchFastBoot");
-}
-
-void ApplyInputBindings(const Values& values, SettingsInterface& settings)
-{
-  // GBAStation owns the launcher hotkeys, while DuckStation keeps its own
-  // controller mapping. Do not overwrite Pad1 or its controller type here.
-  static constexpr struct {
-    const char* source;
-    const char* target;
-  } kHotkeys[] = {
-    {"ps1.hotkey.menu.pad", "OpenPauseMenu"}, {"ps1.hotkey.pause.pad", "TogglePause"},
-    {"ps1.hotkey.mute.pad", "AudioMute"},     {"ps1.hotkey.quicksave.pad", "SaveSelectedSaveState"},
-    {"ps1.hotkey.quickload.pad", "LoadSelectedSaveState"}, {"ps1.hotkey.screenshot.pad", "Screenshot"},
-    {"ps1.handle.fastforward", "FastForward"}, {"ps1.handle.rewind", "Rewind"},
-  };
-  for (const auto& hotkey : kHotkeys)
-    SetBinding(settings, values, hotkey.source, "Hotkeys", hotkey.target);
 }
 
 } // namespace GBAStationConfig

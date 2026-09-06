@@ -228,7 +228,9 @@ static AsyncOpProgressCallback* s_async_op_progress = nullptr;
 #ifdef __SWITCH__
 std::string switch_program_path;
 static std::string s_switch_return_nro{GBAStation::SwitchPaths::ReturnNro};
-static bool s_switch_return_to_nro = true;
+static bool s_switch_return_to_nro = false;
+static bool s_switch_external_launch_requested = false;
+static bool s_switch_exit_after_game = false;
 static std::atomic_bool s_switch_boot_failed{false};
 
 static std::string QuoteSwitchArg(const std::string& value)
@@ -390,7 +392,6 @@ bool NoGUIHost::InitializeConfig(std::string settings_filename)
 #ifdef __SWITCH__
   GBAStationConfig::Load(&s_gbastation_config);
   GBAStationConfig::ApplyCoreSettings(s_gbastation_config, *s_base_settings_interface);
-  GBAStationConfig::ApplyInputBindings(s_gbastation_config, *s_base_settings_interface);
 
   // GameDB savePath is metadata only. Do not migrate or use legacy per-game
   // directories; keep both memory cards and save states in fixed locations.
@@ -1129,10 +1130,11 @@ void Host::RequestSystemShutdown(bool allow_confirm, bool save_state)
   }
 
 #ifdef __SWITCH__
-  // External cores are chained back to GBAStation through envSetNextLoad().
-  // Closing the game must therefore end this NRO after the shutdown request,
-  // instead of leaving DuckStation's standalone frontend running.
-  if (s_switch_return_to_nro)
+  // A game-path launch is a single-game process even when no return NRO was
+  // supplied. Closing that game must end this NRO instead of showing the
+  // standalone DuckStation frontend. With --return, the process is then
+  // chained back to GBAStation after cleanup.
+  if (s_switch_exit_after_game || s_switch_return_to_nro)
     NoGUIHost::s_running.store(false, std::memory_order_release);
 #endif
 }
@@ -1365,11 +1367,14 @@ bool NoGUIHost::ParseCommandLineParametersAndInitializeConfig(int argc, char* ar
       else if (CHECK_ARG_PARAM("--return"))
       {
         s_switch_return_nro = argv[++i];
+        s_switch_return_to_nro = true;
+        s_switch_external_launch_requested = true;
         continue;
       }
       else if (CHECK_ARG("--exit-to-home"))
       {
         s_switch_return_to_nro = false;
+        s_switch_external_launch_requested = true;
         continue;
       }
       else if (CHECK_ARG_PARAM("--gbastation-session"))
@@ -1377,6 +1382,7 @@ bool NoGUIHost::ParseCommandLineParametersAndInitializeConfig(int argc, char* ar
         // The launcher may attach a session token. DuckStation does not need
         // to consume it yet, but it must not be mistaken for a boot filename.
         ++i;
+        s_switch_external_launch_requested = true;
         continue;
       }
 #endif
@@ -1650,8 +1656,16 @@ int main(int argc, char* argv[])
 
   std::optional<SystemBootParameters> autoboot;
 #ifdef __SWITCH__
-  // No arguments means the standalone DuckStation frontend. A parent NRO is
-  // only expected when GBAStation supplied a game launch request.
+  // Switch has two game-launch argument modes, matching the GBAStation
+  // melonDS stub contract:
+  //
+  //   1. A game path is supplied, so the core boots that game immediately.
+  //   2. A game path is supplied together with --return (and optionally the
+  //      GBAStation session token), so the core boots the game and chains back
+  //      to the specified NRO when it exits.
+  //
+  // With no arguments at all, this is a standalone DuckStation launch and
+  // there is no parent NRO to return to.
   if (argc == 1)
     s_switch_return_to_nro = false;
 #endif
@@ -1659,9 +1673,14 @@ int main(int argc, char* argv[])
     return EXIT_FAILURE;
 
 #ifdef __SWITCH__
-  if (argc > 1 && (!autoboot || autoboot->filename.empty()))
+  s_switch_exit_after_game = autoboot && !autoboot->filename.empty();
+
+  // The external-core protocol used by the melonDS stub always carries a
+  // game path. Keep control-only invocations from being mistaken for that
+  // protocol, while retaining normal DuckStation options without a game.
+  if (s_switch_external_launch_requested && (!autoboot || autoboot->filename.empty()))
   {
-    g_nogui_window->ReportError("Error", "A game path is required when launched by GBAStation.");
+    g_nogui_window->ReportError("Error", "A game path is required with external launch parameters.");
     return EXIT_FAILURE;
   }
 #endif

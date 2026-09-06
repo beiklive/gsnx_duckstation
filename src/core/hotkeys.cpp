@@ -35,7 +35,11 @@ void Settings::SetDefaultHotkeyConfig(SettingsInterface& si)
   si.SetStringValue("Hotkeys", "Screenshot", "Keyboard/F10");
   si.SetStringValue("Hotkeys", "ToggleFullscreen", "Keyboard/F11");
 
+#ifdef __SWITCH__
+  si.SetStringValue("Hotkeys", "OpenPauseMenu", "P0/Minus&P0/Plus");
+#else
   si.SetStringValue("Hotkeys", "OpenPauseMenu", "Keyboard/Escape");
+#endif
   si.SetStringValue("Hotkeys", "LoadSelectedSaveState", "Keyboard/F1");
   si.SetStringValue("Hotkeys", "SaveSelectedSaveState", "Keyboard/F2");
   si.SetStringValue("Hotkeys", "SelectPreviousSaveStateSlot", "Keyboard/F3");

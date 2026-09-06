@@ -17,11 +17,7 @@ bool Load(Values* values, std::string* loaded_path = nullptr);
 
 // Copies the PS1 core settings from config.cfg into DuckStation's native
 // SettingsInterface sections. Legacy ps1.* core keys are accepted as a
-// fallback, while ps1.handle.* and ps1.hotkey.* remain launcher bindings.
+// fallback. Input mappings remain entirely in DuckStation's native settings.
 void ApplyCoreSettings(const Values& values, SettingsInterface& settings);
-
-// Converts GBAStation's PAD_* names to Switch input bindings and installs
-// both controller and hotkey bindings in DuckStation's settings layer.
-void ApplyInputBindings(const Values& values, SettingsInterface& settings);
 
 } // namespace GBAStationConfig

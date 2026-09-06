@@ -3,6 +3,8 @@
 
 #include "nogui_host.h"
 #include "nogui_platform.h"
+#include "gbastation_config.h"
+#include "gbastation_game_db.h"
 #include "switch_paths.h"
 
 #include "scmversion/scmversion.h"
@@ -42,6 +44,9 @@
 #include <cmath>
 #include <condition_variable>
 #include <csignal>
+#include <cstring>
+#include <mutex>
+#include <unordered_map>
 #include <thread>
 
 #ifdef __SWITCH__
@@ -127,10 +132,78 @@ static void CancelAsyncOp();
 static void StartAsyncOp(std::function<void(ProgressCallback*)> callback);
 static void AsyncOpThreadEntryPoint(std::function<void(ProgressCallback*)> callback);
 
+static std::string DecodeTsText(std::string value)
+{
+  const std::pair<const char*, const char*> entities[] = {
+    {"&amp;", "&"}, {"&lt;", "<"}, {"&gt;", ">"}, {"&quot;", "\""}, {"&apos;", "'"}};
+  for (const auto& [from, to] : entities)
+  {
+    size_t pos = 0;
+    while ((pos = value.find(from, pos)) != std::string::npos)
+    {
+      value.replace(pos, std::strlen(from), to);
+      pos += std::strlen(to);
+    }
+  }
+  return value;
+}
+
+static const std::unordered_map<std::string, std::string>& GetChineseTranslations()
+{
+  static const std::unordered_map<std::string, std::string> translations = [] {
+    std::unordered_map<std::string, std::string> result;
+    const std::optional<std::string> text = Host::ReadResourceFileToString("duckstation-qt_zh-CN.ts", false);
+    if (!text)
+      return result;
+
+    std::string context;
+    size_t cursor = 0;
+    while (cursor < text->size())
+    {
+      const size_t contextBegin = text->find("<name>", cursor);
+      if (contextBegin == std::string::npos)
+        break;
+      const size_t contextEnd = text->find("</name>", contextBegin + 6);
+      if (contextEnd == std::string::npos)
+        break;
+      context = DecodeTsText(text->substr(contextBegin + 6, contextEnd - contextBegin - 6));
+      const size_t nextContext = text->find("<context>", contextEnd);
+      size_t messageCursor = contextEnd;
+      while (messageCursor < text->size() &&
+             (nextContext == std::string::npos || messageCursor < nextContext))
+      {
+        const size_t sourceBegin = text->find("<source>", messageCursor);
+        if (sourceBegin == std::string::npos ||
+            (nextContext != std::string::npos && sourceBegin >= nextContext))
+          break;
+        const size_t sourceEnd = text->find("</source>", sourceBegin + 8);
+        const size_t translationBegin = text->find("<translation", sourceEnd);
+        if (sourceEnd == std::string::npos || translationBegin == std::string::npos ||
+            (nextContext != std::string::npos && translationBegin >= nextContext))
+          break;
+        const size_t translationTagEnd = text->find('>', translationBegin);
+        const size_t translationEnd = text->find("</translation>", translationTagEnd);
+        if (translationTagEnd == std::string::npos || translationEnd == std::string::npos)
+          break;
+        const std::string source = DecodeTsText(text->substr(sourceBegin + 8, sourceEnd - sourceBegin - 8));
+        const std::string translated = DecodeTsText(text->substr(translationTagEnd + 1,
+                                                                    translationEnd - translationTagEnd - 1));
+        if (!source.empty() && !translated.empty())
+          result.emplace(context + '\x1f' + source, translated);
+        messageCursor = translationEnd + 14;
+      }
+      cursor = nextContext == std::string::npos ? text->size() : nextContext + 9;
+    }
+    return result;
+  }();
+  return translations;
+}
+
 //////////////////////////////////////////////////////////////////////////
 // Local variable declarations
 //////////////////////////////////////////////////////////////////////////
 static std::unique_ptr<INISettingsInterface> s_base_settings_interface;
+static GBAStationConfig::Values s_gbastation_config;
 static bool s_batch_mode = false;
 static bool s_is_fullscreen = false;
 static bool s_was_paused_by_focus_loss = false;
@@ -311,6 +384,19 @@ bool NoGUIHost::InitializeConfig(std::string settings_filename)
     s_base_settings_interface->Save();
   }
 
+#ifdef __SWITCH__
+  GBAStationConfig::Load(&s_gbastation_config);
+  GBAStationConfig::ApplyCoreSettings(s_gbastation_config, *s_base_settings_interface);
+  GBAStationConfig::ApplyInputBindings(s_gbastation_config, *s_base_settings_interface);
+
+  // GameDB savePath is metadata only. Do not migrate or use legacy per-game
+  // directories; keep both memory cards and save states in fixed locations.
+  s_base_settings_interface->SetStringValue("MemoryCards", "Directory",
+                                            GBAStation::SwitchPaths::MemoryCardsDirectory.data());
+  s_base_settings_interface->SetStringValue("Folders", "SaveStates",
+                                            GBAStation::SwitchPaths::SaveStatesDirectory.data());
+#endif
+
   EmuFolders::LoadConfig(*s_base_settings_interface.get());
   EmuFolders::EnsureFoldersExist();
 
@@ -329,6 +415,7 @@ void NoGUIHost::SetDefaultSettings(SettingsInterface& si, bool system, bool cont
   if (system)
   {
     System::SetDefaultSettings(si);
+    si.SetStringValue("Main", "Language", "zh-CN");
     EmuFolders::SetDefaults();
     EmuFolders::Save(si);
   }
@@ -386,12 +473,18 @@ void Host::ReportDebuggerMessage(const std::string_view& message)
 
 std::span<const std::pair<const char*, const char*>> Host::GetAvailableLanguageList()
 {
-  return {};
+  static constexpr std::pair<const char*, const char*> languages[] = {
+    {"简体中文", "zh-CN"}, {"English", "en"}};
+  return languages;
 }
 
 bool Host::ChangeLanguage(const char* new_language)
 {
-  return false;
+  if (std::strcmp(new_language, "zh-CN") != 0 && std::strcmp(new_language, "en") != 0)
+    return false;
+  Host::SetBaseStringSettingValue("Main", "Language", new_language);
+  Host::CommitBaseSettingChanges();
+  return true;
 }
 
 void Host::AddFixedInputBindings(SettingsInterface& si)
@@ -413,13 +506,24 @@ void Host::OnInputDeviceDisconnected(const std::string_view& identifier)
 s32 Host::Internal::GetTranslatedStringImpl(const std::string_view& context, const std::string_view& msg, char* tbuf,
                                             size_t tbuf_space)
 {
-  if (msg.size() > tbuf_space)
+  std::string translated;
+  if (Host::GetBaseStringSettingValue("Main", "Language", "zh-CN") == "zh-CN")
+  {
+    const auto& translations = NoGUIHost::GetChineseTranslations();
+    const std::string key = std::string(context) + '\x1f' + std::string(msg);
+    if (const auto it = translations.find(key); it != translations.end())
+      translated = it->second;
+  }
+  if (translated.empty())
+    translated.assign(msg);
+
+  if (translated.size() > tbuf_space)
     return -1;
-  else if (msg.empty())
+  else if (translated.empty())
     return 0;
 
-  std::memcpy(tbuf, msg.data(), msg.size());
-  return static_cast<s32>(msg.size());
+  std::memcpy(tbuf, translated.data(), translated.size());
+  return static_cast<s32>(translated.size());
 }
 
 ALWAYS_INLINE std::string NoGUIHost::GetResourcePath(std::string_view filename, bool allow_override)
@@ -509,7 +613,8 @@ void NoGUIHost::SetBatchMode(bool enabled)
 
 void NoGUIHost::StartSystem(SystemBootParameters params)
 {
-  Host::RunOnCPUThread([params = std::move(params)]() {
+  Host::RunOnCPUThread([params = std::move(params)]() mutable {
+    const std::string game_path = params.filename;
     Error error;
     if (!System::BootSystem(std::move(params), &error))
     {
@@ -519,6 +624,12 @@ void NoGUIHost::StartSystem(SystemBootParameters params)
       Host::ReportErrorAsync(TRANSLATE_SV("System", "Error"),
                              fmt::format(TRANSLATE_FS("System", "Failed to boot system: {}"), error.GetDescription()));
       NoGUIHost::StopRunning();
+    }
+    else
+    {
+#ifdef __SWITCH__
+      GBAStationGameDB::OnGameStarted(game_path);
+#endif
     }
   });
 }
@@ -730,6 +841,9 @@ void NoGUIHost::CPUThreadEntryPoint()
 
   if (System::IsValid())
     System::ShutdownSystem(false);
+#ifdef __SWITCH__
+  GBAStationGameDB::OnGameStopped();
+#endif
   Host::ReleaseGPUDevice();
   Host::ReleaseRenderWindow();
 

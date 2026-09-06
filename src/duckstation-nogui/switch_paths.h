@@ -9,6 +9,12 @@ namespace GBAStation::SwitchPaths {
 
 inline constexpr std::string_view ReturnNro = "sdmc:/switch/GBAStation.nro";
 inline constexpr std::string_view DataRoot = "sdmc:/GBAStation/duckstation";
+inline constexpr std::string_view MemoryCardsDirectory = "sdmc:/GBAStation/duckstation/memcards";
+inline constexpr std::string_view SaveStatesDirectory = "sdmc:/GBAStation/duckstation/savestates";
+inline constexpr std::string_view ConfigFile = "sdmc:/GBAStation/config/config.cfg";
+inline constexpr std::string_view LegacyConfigFile = "/GBAStation/config/config.cfg";
+inline constexpr std::string_view GameDatabaseFile = "sdmc:/GBAStation/data/GameData_PS1.json";
+inline constexpr std::string_view LegacyGameDatabaseFile = "/GBAStation/data/GameData_PS1.json";
 inline constexpr std::string_view RomfsResources = "romfs:/resources";
 
 inline constexpr std::string_view PortableMarker = "portable.txt";

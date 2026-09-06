@@ -1,4 +1,8 @@
 add_executable(duckstation-nogui
+  gbastation_config.cpp
+  gbastation_config.h
+  gbastation_game_db.cpp
+  gbastation_game_db.h
   nogui_host.cpp
   nogui_host.h
   nogui_platform.h
@@ -6,9 +10,15 @@ add_executable(duckstation-nogui
 )
 
 target_precompile_headers(duckstation-nogui PRIVATE "pch.h")
-target_link_libraries(duckstation-nogui PRIVATE core util common imgui scmversion)
+target_link_libraries(duckstation-nogui PRIVATE core util common imgui scmversion rapidjson)
 
 add_core_resources(duckstation-nogui)
+
+# Reuse DuckStation's maintained Simplified Chinese catalog for the NoGUI
+# fullscreen menu. The NoGUI host provides a small Qt-free TS lookup layer.
+add_resources(duckstation-nogui
+  ${CMAKE_SOURCE_DIR}/src/duckstation-qt/translations/duckstation-qt_zh-CN.ts
+  ${CMAKE_SOURCE_DIR}/src/duckstation-qt/translations)
 
 if(NINTENDO_SWITCH)
   enable_language(ASM)

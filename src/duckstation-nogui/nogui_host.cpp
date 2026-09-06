@@ -204,6 +204,9 @@ static const std::unordered_map<std::string, std::string>& GetChineseTranslation
 //////////////////////////////////////////////////////////////////////////
 static std::unique_ptr<INISettingsInterface> s_base_settings_interface;
 static GBAStationConfig::Values s_gbastation_config;
+// Translation is called while fullscreen settings pages hold the settings
+// mutex, so it must not query the settings layer itself.
+static std::atomic_bool s_use_chinese_translations{true};
 static bool s_batch_mode = false;
 static bool s_is_fullscreen = false;
 static bool s_was_paused_by_focus_loss = false;
@@ -397,6 +400,10 @@ bool NoGUIHost::InitializeConfig(std::string settings_filename)
                                             GBAStation::SwitchPaths::SaveStatesDirectory.data());
 #endif
 
+  s_use_chinese_translations.store(
+    s_base_settings_interface->GetStringValue("Main", "Language", "zh-CN") == "zh-CN",
+    std::memory_order_release);
+
   EmuFolders::LoadConfig(*s_base_settings_interface.get());
   EmuFolders::EnsureFoldersExist();
 
@@ -483,6 +490,8 @@ bool Host::ChangeLanguage(const char* new_language)
   if (std::strcmp(new_language, "zh-CN") != 0 && std::strcmp(new_language, "en") != 0)
     return false;
   Host::SetBaseStringSettingValue("Main", "Language", new_language);
+  NoGUIHost::s_use_chinese_translations.store(std::strcmp(new_language, "zh-CN") == 0,
+                                               std::memory_order_release);
   Host::CommitBaseSettingChanges();
   return true;
 }
@@ -507,7 +516,7 @@ s32 Host::Internal::GetTranslatedStringImpl(const std::string_view& context, con
                                             size_t tbuf_space)
 {
   std::string translated;
-  if (Host::GetBaseStringSettingValue("Main", "Language", "zh-CN") == "zh-CN")
+  if (NoGUIHost::s_use_chinese_translations.load(std::memory_order_acquire))
   {
     const auto& translations = NoGUIHost::GetChineseTranslations();
     const std::string key = std::string(context) + '\x1f' + std::string(msg);
@@ -1118,6 +1127,14 @@ void Host::RequestSystemShutdown(bool allow_confirm, bool save_state)
   {
     Host::RunOnCPUThread([save_state]() { System::ShutdownSystem(save_state); });
   }
+
+#ifdef __SWITCH__
+  // External cores are chained back to GBAStation through envSetNextLoad().
+  // Closing the game must therefore end this NRO after the shutdown request,
+  // instead of leaving DuckStation's standalone frontend running.
+  if (s_switch_return_to_nro)
+    NoGUIHost::s_running.store(false, std::memory_order_release);
+#endif
 }
 
 std::optional<u32> InputManager::ConvertHostKeyboardStringToCode(const std::string_view& str)

@@ -92,6 +92,7 @@ static std::vector<u8> s_fixed_font_data;
 static std::vector<u8> s_icon_fa_font_data;
 static std::vector<u8> s_icon_pf_font_data;
 static std::vector<u8> s_switch_chinese_font_data;
+static ImVector<ImWchar> s_switch_chinese_glyph_ranges;
 
 static float s_window_width;
 static float s_window_height;
@@ -538,6 +539,44 @@ bool ImGuiManager::LoadFontData()
         const auto* begin = static_cast<const u8*>(font_data.address);
         s_switch_chinese_font_data.assign(begin, begin + font_data.size);
         Log_InfoPrintf("Loaded Switch shared Simplified Chinese font (%u bytes).", font_data.size);
+
+        // Do not use GetGlyphRangesChineseFull() here. The full CJK range is
+        // prohibitively large when it is baked at all three fullscreen sizes.
+        // Build the range from our bundled catalog instead, which includes
+        // every translated menu string and keeps the Switch font atlas small.
+        ImFontGlyphRangesBuilder glyph_builder;
+        if (const std::optional<std::string> translations =
+              Host::ReadResourceFileToString("duckstation-qt_zh-CN.ts", false))
+        {
+          size_t cursor = 0;
+          while (cursor < translations->size())
+          {
+            const size_t tag_begin = translations->find("<translation", cursor);
+            if (tag_begin == std::string::npos)
+              break;
+
+            const size_t text_begin = translations->find('>', tag_begin);
+            if (text_begin == std::string::npos)
+              break;
+
+            const size_t text_end = translations->find("</translation>", text_begin + 1);
+            if (text_end == std::string::npos)
+              break;
+
+            glyph_builder.AddText(translations->data() + text_begin + 1,
+                                  translations->data() + text_end);
+            cursor = text_end + std::strlen("</translation>");
+          }
+        }
+
+        glyph_builder.BuildRanges(&s_switch_chinese_glyph_ranges);
+        if (s_switch_chinese_glyph_ranges.empty())
+        {
+          // Retain a useful fallback if the bundled translation resource is
+          // unavailable in a custom build.
+          glyph_builder.AddRanges(ImGui::GetIO().Fonts->GetGlyphRangesChineseSimplifiedCommon());
+          glyph_builder.BuildRanges(&s_switch_chinese_glyph_ranges);
+        }
       }
       else
       {
@@ -595,8 +634,8 @@ ImFont* ImGuiManager::AddTextFont(float size)
     chinese_cfg.PixelSnapH = true;
     chinese_cfg.FontDataOwnedByAtlas = false;
     if (!ImGui::GetIO().Fonts->AddFontFromMemoryTTF(
-          s_switch_chinese_font_data.data(), static_cast<int>(s_switch_chinese_font_data.size()), size,
-          &chinese_cfg, ImGui::GetIO().Fonts->GetGlyphRangesChineseSimplifiedCommon()))
+          s_switch_chinese_font_data.data(), static_cast<int>(s_switch_chinese_font_data.size()), size * 0.90f,
+          &chinese_cfg, s_switch_chinese_glyph_ranges.Data))
     {
       return nullptr;
     }

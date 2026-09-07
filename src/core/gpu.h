@@ -609,6 +609,12 @@ protected:
   s32 m_display_texture_view_width = 0;
   s32 m_display_texture_view_height = 0;
 
+#ifdef __SWITCH__
+  std::unique_ptr<GPUPipeline> m_display_overlay_pipeline;
+  std::unique_ptr<GPUTexture> m_display_overlay_texture;
+  std::string m_display_overlay_path;
+#endif
+
   struct Counters
   {
     u32 num_reads;
@@ -637,6 +643,11 @@ protected:
 
 private:
   bool CompileDisplayPipelines(bool display, bool deinterlace, bool chroma_smoothing);
+
+#ifdef __SWITCH__
+  void UpdateDisplayOverlay();
+  void DrawDisplayOverlay();
+#endif
 
   using GP0CommandHandler = bool (GPU::*)();
   using GP0CommandHandlerTable = std::array<GP0CommandHandler, 256>;

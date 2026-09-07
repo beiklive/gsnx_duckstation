@@ -128,7 +128,7 @@ static void ApplyMacroButton(u32 pad, const MacroButton& mb);
 static void UpdateMacroButtons();
 
 #ifdef __SWITCH__
-static void MigrateSwitchControllerBindings(SettingsInterface& si);
+static void RepairSwitchControllerBindings(SettingsInterface& si);
 #endif
 
 static void UpdateInputSourceState(SettingsInterface& si, std::unique_lock<std::mutex>& settings_lock,
@@ -1734,25 +1734,83 @@ bool InputManager::DoEventHook(InputBindingKey key, float value)
 // ------------------------------------------------------------------------
 
 #ifdef __SWITCH__
-void InputManager::MigrateSwitchControllerBindings(SettingsInterface& si)
+static bool IsAnalogStickBinding(GenericInputBinding binding)
+{
+  switch (binding)
+  {
+    case GenericInputBinding::LeftStickUp:
+    case GenericInputBinding::LeftStickRight:
+    case GenericInputBinding::LeftStickDown:
+    case GenericInputBinding::LeftStickLeft:
+    case GenericInputBinding::RightStickUp:
+    case GenericInputBinding::RightStickRight:
+    case GenericInputBinding::RightStickDown:
+    case GenericInputBinding::RightStickLeft:
+      return true;
+
+    default:
+      return false;
+  }
+}
+
+static bool HasSwitchAxisBinding(const std::vector<std::string>& bindings)
+{
+  for (const std::string& binding : bindings)
+  {
+    for (const std::string_view part : InputManager::SplitChord(binding))
+    {
+      const std::optional<InputBindingKey> key = InputManager::ParseInputBindingKey(part);
+      if (key.has_value() && key->source_type == InputSourceType::Switch &&
+          key->source_subtype == InputSubclass::ControllerAxis)
+      {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+void InputManager::RepairSwitchControllerBindings(SettingsInterface& si)
 {
   const std::string section(Controller::GetSettingsSection(0));
   const std::string up_binding(si.GetStringValue(section.c_str(), "Up", ""));
-  if (!up_binding.starts_with("Keyboard/"))
-    return;
-
   const GenericInputBindingMapping mapping(GetGenericBindingMapping("P0"));
   if (mapping.empty())
   {
-    Log_ErrorPrintf("(InputManager) Unable to migrate Switch controller bindings: P0 mapping is unavailable.");
+    Log_ErrorPrintf("(InputManager) Unable to repair Switch controller bindings: P0 mapping is unavailable.");
     return;
   }
 
-  if (MapController(si, 0, mapping))
+  // Old Switch settings could contain the desktop keyboard defaults. Replace
+  // the complete mapping in that case, preserving the configured pad type.
+  if (up_binding.starts_with("Keyboard/"))
   {
-    si.SetBoolValue("InputSources", "Switch", true);
-    Log_InfoPrintf("(InputManager) Migrated Pad1 bindings from Keyboard to Switch controller P0.");
+    if (MapController(si, 0, mapping))
+      Log_InfoPrintf("(InputManager) Replaced legacy Pad1 keyboard bindings with Switch controller P0.");
+    return;
   }
+
+  const std::string type(si.GetStringValue(section.c_str(), "Type", Controller::GetDefaultPadType(0)));
+  const Controller::ControllerInfo* info = Controller::GetControllerInfo(type);
+  if (!info)
+    return;
+
+  u32 repaired_axes = 0;
+  for (const Controller::ControllerBindingInfo& bi : info->bindings)
+  {
+    if (!IsAnalogStickBinding(bi.generic_mapping) ||
+        HasSwitchAxisBinding(si.GetStringList(section.c_str(), bi.name)))
+    {
+      continue;
+    }
+
+    repaired_axes += TryMapGenericMapping(si, section, mapping, bi.generic_mapping, bi.name);
+  }
+
+  if (repaired_axes > 0)
+    Log_WarningPrintf("(InputManager) Restored %u missing or invalid Pad1 analog bindings from Switch controller P0.",
+                      repaired_axes);
 }
 #endif
 
@@ -1760,13 +1818,13 @@ void InputManager::ReloadBindings(SettingsInterface& si, SettingsInterface& bind
 {
 #ifdef __SWITCH__
   // During the first settings load there is no input layer yet, so the
-  // binding interface is the read-only layered interface. Migrate the base
-  // INI layer in that case; input profiles remain writable and are migrated
-  // in place.
+  // binding interface is the read-only layered interface. Repair the base INI
+  // layer in that case; input profiles and per-game layers are repaired in
+  // memory when either one supplies the active controller bindings.
   SettingsInterface* migration_si = &binding_si;
   if (migration_si == Host::GetSettingsInterface())
     migration_si = Host::Internal::GetBaseSettingsLayer();
-  MigrateSwitchControllerBindings(*migration_si);
+  RepairSwitchControllerBindings(*migration_si);
 #endif
 
   PauseVibration();
@@ -1964,6 +2022,14 @@ GenericInputBindingMapping InputManager::GetGenericBindingMapping(const std::str
 
 bool InputManager::IsInputSourceEnabled(SettingsInterface& si, InputSourceType type)
 {
+#ifdef __SWITCH__
+  // This frontend has no alternate runtime input backend. A persisted false
+  // value would disable every Switch button and axis until settings.ini is
+  // deleted, so keep the native source available unconditionally.
+  if (type == InputSourceType::Switch)
+    return true;
+#endif
+
 #ifdef __ANDROID__
   // Force Android source to always be enabled so nobody accidentally breaks it via ini.
   if (type == InputSourceType::Android)

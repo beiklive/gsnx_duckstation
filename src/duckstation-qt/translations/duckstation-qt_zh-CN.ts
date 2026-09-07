@@ -8313,6 +8313,61 @@ Do you want to load this save and continue?</source>
         <source>Fast Forward Speed</source>
         <translation>快进速度</translation>
     </message>
+    <message>
+        <location filename="../../core/fullscreen_ui.cpp" line="4471"/>
+        <source>Overlay &amp; Shader Settings</source>
+        <translation>遮罩与着色器</translation>
+    </message>
+    <message>
+        <location filename="../../core/fullscreen_ui.cpp" line="4471"/>
+        <source>Overlay</source>
+        <translation>遮罩</translation>
+    </message>
+    <message>
+        <location filename="../../core/fullscreen_ui.cpp" line="4471"/>
+        <source>Enable Overlay</source>
+        <translation>启用遮罩</translation>
+    </message>
+    <message>
+        <location filename="../../core/fullscreen_ui.cpp" line="4471"/>
+        <source>Stretches the selected image over the full window, on top of the game display.</source>
+        <translation>将选中的图片拉伸铺满整个窗口，叠加在游戏画面之上。</translation>
+    </message>
+    <message>
+        <location filename="../../core/fullscreen_ui.cpp" line="4471"/>
+        <source>Overlay Directory</source>
+        <translation>遮罩目录</translation>
+    </message>
+    <message>
+        <location filename="../../core/fullscreen_ui.cpp" line="4471"/>
+        <source>Directory scanned for overlay images.</source>
+        <translation>扫描遮罩图片的目录。</translation>
+    </message>
+    <message>
+        <location filename="../../core/fullscreen_ui.cpp" line="4471"/>
+        <source>Select Overlay Directory</source>
+        <translation>选择遮罩目录</translation>
+    </message>
+    <message>
+        <location filename="../../core/fullscreen_ui.cpp" line="4471"/>
+        <source>Overlay Image</source>
+        <translation>遮罩图片</translation>
+    </message>
+    <message>
+        <location filename="../../core/fullscreen_ui.cpp" line="4471"/>
+        <source>The overlay image to display.</source>
+        <translation>要显示的遮罩图片。</translation>
+    </message>
+    <message>
+        <location filename="../../core/fullscreen_ui.cpp" line="4471"/>
+        <source>No overlay images found.</source>
+        <translation>未找到遮罩图片。</translation>
+    </message>
+    <message>
+        <location filename="../../core/fullscreen_ui.cpp" line="4471"/>
+        <source>None</source>
+        <translation>无</translation>
+    </message>
 </context>
 <context>
     <name>GPU</name>

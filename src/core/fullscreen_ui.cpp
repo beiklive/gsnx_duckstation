@@ -2829,22 +2829,24 @@ void FullscreenUI::DrawSettingsWindow()
       ICON_PF_PICTURE,      ICON_FA_MAGIC,       ICON_PF_SOUND,  ICON_PF_GAMEPAD_ALT,
       ICON_PF_KEYBOARD_ALT, ICON_PF_MEMORY_CARD, ICON_FA_TROPHY, ICON_FA_EXCLAMATION_TRIANGLE};
     static constexpr const char* per_game_icons[] = {ICON_FA_PARAGRAPH,   ICON_FA_HDD,    ICON_FA_COGS,
-                                                     ICON_PF_PICTURE,     ICON_PF_SOUND,  ICON_PF_GAMEPAD_ALT,
-                                                     ICON_PF_MEMORY_CARD, ICON_FA_TROPHY, ICON_FA_EXCLAMATION_TRIANGLE};
+                                                     ICON_PF_PICTURE,     ICON_FA_MAGIC,  ICON_PF_SOUND,
+                                                     ICON_PF_GAMEPAD_ALT, ICON_PF_MEMORY_CARD, ICON_FA_TROPHY,
+                                                     ICON_FA_EXCLAMATION_TRIANGLE};
     static constexpr SettingsPage global_pages[] = {
       SettingsPage::Interface, SettingsPage::Console,        SettingsPage::Emulation,    SettingsPage::BIOS,
       SettingsPage::Display,   SettingsPage::PostProcessing, SettingsPage::Audio,        SettingsPage::Controller,
       SettingsPage::Hotkey,    SettingsPage::MemoryCards,    SettingsPage::Achievements, SettingsPage::Advanced};
     static constexpr SettingsPage per_game_pages[] = {
-      SettingsPage::Summary,     SettingsPage::Console,      SettingsPage::Emulation,
-      SettingsPage::Display,     SettingsPage::Audio,        SettingsPage::Controller,
-      SettingsPage::MemoryCards, SettingsPage::Achievements, SettingsPage::Advanced};
+      SettingsPage::Summary,     SettingsPage::Console,       SettingsPage::Emulation,
+      SettingsPage::Display,     SettingsPage::PostProcessing, SettingsPage::Audio,
+      SettingsPage::Controller,  SettingsPage::MemoryCards,    SettingsPage::Achievements,
+      SettingsPage::Advanced};
     static constexpr std::array<const char*, static_cast<u32>(SettingsPage::Count)> titles = {
       {FSUI_NSTR("Summary"), FSUI_NSTR("Interface Settings"), FSUI_NSTR("Console Settings"),
        FSUI_NSTR("Emulation Settings"), FSUI_NSTR("BIOS Settings"), FSUI_NSTR("Controller Settings"),
-       FSUI_NSTR("Hotkey Settings"), FSUI_NSTR("Memory Card Settings"), FSUI_NSTR("Graphics Settings"),
-       FSUI_NSTR("Post-Processing Settings"), FSUI_NSTR("Audio Settings"), FSUI_NSTR("Achievements Settings"),
-       FSUI_NSTR("Advanced Settings")}};
+        FSUI_NSTR("Hotkey Settings"), FSUI_NSTR("Memory Card Settings"), FSUI_NSTR("Graphics Settings"),
+        FSUI_NSTR("Overlay & Shader Settings"), FSUI_NSTR("Audio Settings"), FSUI_NSTR("Achievements Settings"),
+        FSUI_NSTR("Advanced Settings")}};
 
     const bool game_settings = IsEditingGameSettings(GetEditingSettingsInterface());
     const u32 count =
@@ -3236,8 +3238,14 @@ void FullscreenUI::DrawBIOSSettingsPage()
                          {
                            auto lock = Host::GetSettingsLock();
                            SettingsInterface* bsi = GetEditingSettingsInterface(game_settings);
+                           const s32 auto_detect_index = game_settings ? 1 : 0;
                            if (game_settings && index == 0)
                              bsi->DeleteValue("BIOS", config_keys[i]);
+                           else if (index == auto_detect_index)
+                             // Auto-Detect is represented by an empty value. The
+                             // dialog label is translated and must never be saved
+                             // as a BIOS filename.
+                             bsi->SetStringValue("BIOS", config_keys[i], "");
                            else
                              bsi->SetStringValue("BIOS", config_keys[i], path.c_str());
                            SetSettingsChanged(bsi);
@@ -4465,8 +4473,86 @@ enum
 void FullscreenUI::DrawPostProcessingSettingsPage()
 {
   SettingsInterface* bsi = GetEditingSettingsInterface();
+  const bool game_settings = IsEditingGameSettings(bsi);
 
   BeginMenuButtons();
+
+  MenuHeading(FSUI_CSTR("Overlay"));
+
+  // When editing per-game settings, keys missing from the game's own file fall
+  // back to the global (base) layer. Show the effective value, and store
+  // overrides in the settings file being edited. These helpers must not take
+  // the settings lock: DrawSettingsWindow() already holds it while pages are
+  // being drawn, so Host::GetBase*SettingValue() would deadlock here.
+  const bool overlay_enabled_default =
+    GetEffectiveBoolSetting(bsi, "Display", "OverlayEnabled", false);
+  DrawToggleSetting(bsi, FSUI_ICONSTR(ICON_FA_IMAGE, "Enable Overlay"),
+                    FSUI_CSTR("Stretches the selected image over the full window, on top of the game display."),
+                    "Display", "OverlayEnabled", overlay_enabled_default);
+
+  const auto get_effective_string = [bsi](const char* section, const char* key, const char* default_value) {
+    std::string value;
+    if (bsi->GetStringValue(section, key, &value))
+      return value;
+    return Host::Internal::GetBaseSettingsLayer()->GetStringValue(section, key, default_value);
+  };
+
+  const std::string overlay_directory(
+    get_effective_string("Display", "OverlayDirectory", Settings::DEFAULT_DISPLAY_OVERLAY_DIRECTORY));
+
+  if (MenuButtonWithValue(FSUI_ICONSTR(ICON_FA_FOLDER_OPEN, "Overlay Directory"),
+                          FSUI_CSTR("Directory scanned for overlay images."), overlay_directory.c_str()))
+  {
+    OpenFileSelector(FSUI_CSTR("Select Overlay Directory"), true,
+                     [game_settings](const std::string& dir) {
+                       if (dir.empty())
+                         return;
+
+                       auto lock = Host::GetSettingsLock();
+                       SettingsInterface* bsi = GetEditingSettingsInterface(game_settings);
+                       bsi->SetStringValue("Display", "OverlayDirectory", dir.c_str());
+                       SetSettingsChanged(bsi);
+                       CloseFileSelector();
+                     });
+  }
+
+  const std::string overlay_file(get_effective_string("Display", "OverlayFile", ""));
+  const std::string overlay_file_label(overlay_file.empty() ? FSUI_CSTR("None") : overlay_file.c_str());
+
+  if (MenuButtonWithValue(FSUI_ICONSTR(ICON_FA_FILE_IMAGE, "Overlay Image"),
+                          FSUI_CSTR("The overlay image to display."), overlay_file_label.c_str()))
+  {
+    FileSystem::FindResultsArray files;
+    if (overlay_directory.empty() ||
+        !FileSystem::FindFiles(overlay_directory.c_str(), "*.png",
+                               FILESYSTEM_FIND_FILES | FILESYSTEM_FIND_HIDDEN_FILES |
+                                 FILESYSTEM_FIND_RELATIVE_PATHS,
+                               &files))
+    {
+      ShowToast(std::string(), FSUI_STR("No overlay images found."));
+      CloseChoiceDialog();
+    }
+    else
+    {
+      ImGuiFullscreen::ChoiceDialogOptions options;
+      options.emplace_back(FSUI_STR("None"), overlay_file.empty());
+      for (const FILESYSTEM_FIND_DATA& fd : files)
+        options.emplace_back(fd.FileName, overlay_file == fd.FileName);
+
+      OpenChoiceDialog(FSUI_ICONSTR(ICON_FA_FILE_IMAGE, "Overlay Image"), false, std::move(options),
+                       [game_settings](s32 index, const std::string& title, bool checked) {
+                         if (index >= 0)
+                         {
+                           auto lock = Host::GetSettingsLock();
+                           SettingsInterface* bsi = GetEditingSettingsInterface(game_settings);
+                           bsi->SetStringValue("Display", "OverlayFile",
+                                               (index == 0) ? "" : title.c_str());
+                           SetSettingsChanged(bsi);
+                         }
+                         CloseChoiceDialog();
+                       });
+    }
+  }
 
   MenuHeading(FSUI_CSTR("Controls"));
 
@@ -7291,7 +7377,18 @@ TRANSLATE_NOOP("FullscreenUI", "Hotkey Settings");
 TRANSLATE_NOOP("FullscreenUI", "How many saves will be kept for rewinding. Higher values have greater memory requirements.");
 TRANSLATE_NOOP("FullscreenUI", "How often a rewind state will be created. Higher frequencies have greater system requirements.");
 TRANSLATE_NOOP("FullscreenUI", "Identifies any new files added to the game directories.");
+TRANSLATE_NOOP("FullscreenUI", "Directory scanned for overlay images.");
+TRANSLATE_NOOP("FullscreenUI", "Enable Overlay");
 TRANSLATE_NOOP("FullscreenUI", "If not enabled, the current post processing chain will be ignored.");
+TRANSLATE_NOOP("FullscreenUI", "No overlay images found.");
+TRANSLATE_NOOP("FullscreenUI", "None");
+TRANSLATE_NOOP("FullscreenUI", "Overlay");
+TRANSLATE_NOOP("FullscreenUI", "Overlay & Shader Settings");
+TRANSLATE_NOOP("FullscreenUI", "Overlay Directory");
+TRANSLATE_NOOP("FullscreenUI", "Overlay Image");
+TRANSLATE_NOOP("FullscreenUI", "Select Overlay Directory");
+TRANSLATE_NOOP("FullscreenUI", "Stretches the selected image over the full window, on top of the game display.");
+TRANSLATE_NOOP("FullscreenUI", "The overlay image to display.");
 TRANSLATE_NOOP("FullscreenUI", "Increase Timer Resolution");
 TRANSLATE_NOOP("FullscreenUI", "Increases the field of view from 4:3 to the chosen display aspect ratio in 3D games.");
 TRANSLATE_NOOP("FullscreenUI", "Increases the precision of polygon culling, reducing the number of holes in geometry.");

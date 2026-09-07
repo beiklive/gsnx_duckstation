@@ -88,4 +88,9 @@ std::vector<std::pair<std::string, const BIOS::ImageInfo*>> FindBIOSImagesInDire
 
 /// Returns true if any BIOS images are found in the configured BIOS directory.
 bool HasAnyBIOSImages();
+
+/// Returns true if the value is empty or is one of the auto-detection option
+/// labels older builds persisted as a BIOS path. Such values must never be
+/// treated as a filename; they select directory scanning instead.
+bool IsAutoDetectValue(const std::string_view& value);
 } // namespace BIOS

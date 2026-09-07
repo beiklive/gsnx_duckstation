@@ -55,6 +55,20 @@ std::string GPUShaderGen::GenerateDisplayFragmentShader(bool clamp_uv)
   return ss.str();
 }
 
+std::string GPUShaderGen::GenerateDisplayOverlayFragmentShader()
+{
+  std::stringstream ss;
+  WriteHeader(ss);
+  WriteDisplayUniformBuffer(ss);
+  DeclareTexture(ss, "samp0", 0);
+  DeclareFragmentEntryPoint(ss, 0, 1, {}, false, 1);
+  ss << R"(
+{
+  o_col0 = SAMPLE_TEXTURE(samp0, ClampUV(v_tex0));
+})";
+  return ss.str();
+}
+
 std::string GPUShaderGen::GenerateDisplaySharpBilinearFragmentShader()
 {
   std::stringstream ss;

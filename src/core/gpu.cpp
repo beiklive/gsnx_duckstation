@@ -1646,6 +1646,35 @@ bool GPU::CompileDisplayPipelines(bool display, bool deinterlace, bool chroma_sm
       return false;
     GL_OBJECT_NAME_FMT(m_display_pipeline, "Display Pipeline [{}]",
                        Settings::GetDisplayScalingName(g_settings.display_scaling));
+
+#ifdef __SWITCH__
+    // Full-window overlay (bezel) pipeline. Uses the display vertex shader, so
+    // the uniforms match, and draws the texture with straight-alpha blending.
+    plconfig.blend.enable = true;
+    plconfig.blend.blend_op = GPUPipeline::BlendOp::Add;
+    plconfig.blend.src_blend = GPUPipeline::BlendFunc::SrcAlpha;
+    plconfig.blend.dst_blend = GPUPipeline::BlendFunc::InvSrcAlpha;
+    plconfig.blend.alpha_blend_op = GPUPipeline::BlendOp::Add;
+    plconfig.blend.src_alpha_blend = GPUPipeline::BlendFunc::One;
+    plconfig.blend.dst_alpha_blend = GPUPipeline::BlendFunc::InvSrcAlpha;
+    plconfig.blend.write_r = true;
+    plconfig.blend.write_g = true;
+    plconfig.blend.write_b = true;
+    plconfig.blend.write_a = true;
+
+    std::unique_ptr<GPUShader> overlay_fso =
+      g_gpu_device->CreateShader(GPUShaderStage::Fragment, shadergen.GenerateDisplayOverlayFragmentShader());
+    if (!overlay_fso)
+      return false;
+    GL_OBJECT_NAME(overlay_fso, "Display Overlay Fragment Shader");
+    plconfig.fragment_shader = overlay_fso.get();
+    if (!(m_display_overlay_pipeline = g_gpu_device->CreatePipeline(plconfig)))
+      return false;
+    GL_OBJECT_NAME(m_display_overlay_pipeline, "Display Overlay Pipeline");
+
+    // Restore the blend state for the remaining (deinterlace etc.) pipelines.
+    plconfig.blend = GPUPipeline::BlendState::GetNoBlendingState();
+#endif
   }
 
   if (deinterlace)
@@ -1824,6 +1853,84 @@ bool GPU::PresentDisplay()
   return RenderDisplay(nullptr, draw_rect, true);
 }
 
+#ifdef __SWITCH__
+void GPU::UpdateDisplayOverlay()
+{
+  if (!g_settings.display_overlay_enabled || g_settings.display_overlay_file.empty())
+  {
+    if (m_display_overlay_texture)
+    {
+      m_display_overlay_texture.reset();
+      m_display_overlay_path.clear();
+    }
+    return;
+  }
+
+  const std::string path(Path::Combine(g_settings.display_overlay_directory, g_settings.display_overlay_file));
+  if (m_display_overlay_texture && m_display_overlay_path == path)
+    return;
+
+  m_display_overlay_texture.reset();
+  m_display_overlay_path = path;
+
+  RGBA8Image image;
+  if (!image.LoadFromFile(path.c_str()))
+  {
+    Log_WarningPrintf("Failed to load display overlay image '%s'.", path.c_str());
+    return;
+  }
+
+  m_display_overlay_texture =
+    g_gpu_device->CreateTexture(image.GetWidth(), image.GetHeight(), 1, 1, 1, GPUTexture::Type::Texture,
+                                GPUTexture::Format::RGBA8, image.GetPixels(), image.GetPitch());
+  if (!m_display_overlay_texture)
+    Log_ErrorPrintf("Failed to create display overlay texture '%s'.", path.c_str());
+}
+
+void GPU::DrawDisplayOverlay()
+{
+  if (!m_display_overlay_pipeline || !m_display_overlay_texture)
+    return;
+
+  const u32 window_width = g_gpu_device->GetWindowWidth();
+  const u32 window_height = g_gpu_device->GetWindowHeight();
+  if (window_width == 0 || window_height == 0)
+    return;
+
+  GPUTexture* tex = m_display_overlay_texture.get();
+  const float tex_width = static_cast<float>(tex->GetWidth());
+  const float tex_height = static_cast<float>(tex->GetHeight());
+  const float rcp_width = 1.0f / tex_width;
+  const float rcp_height = 1.0f / tex_height;
+
+  struct Uniforms
+  {
+    float src_rect[4];
+    float src_size[4];
+    float clamp_rect[4];
+    float params[4];
+  } uniforms{};
+  uniforms.src_rect[0] = 0.0f;
+  uniforms.src_rect[1] = 0.0f;
+  uniforms.src_rect[2] = 1.0f;
+  uniforms.src_rect[3] = 1.0f;
+  uniforms.src_size[0] = tex_width;
+  uniforms.src_size[1] = tex_height;
+  uniforms.src_size[2] = rcp_width;
+  uniforms.src_size[3] = rcp_height;
+  uniforms.clamp_rect[0] = 0.5f * rcp_width;
+  uniforms.clamp_rect[1] = 0.5f * rcp_height;
+  uniforms.clamp_rect[2] = (tex_width - 0.5f) * rcp_width;
+  uniforms.clamp_rect[3] = (tex_height - 0.5f) * rcp_height;
+
+  g_gpu_device->SetPipeline(m_display_overlay_pipeline.get());
+  g_gpu_device->SetTextureSampler(0, tex, g_gpu_device->GetLinearSampler());
+  g_gpu_device->PushUniformBuffer(&uniforms, sizeof(uniforms));
+  g_gpu_device->SetViewportAndScissor(0, 0, window_width, window_height);
+  g_gpu_device->Draw(3, 0);
+}
+#endif
+
 bool GPU::RenderDisplay(GPUTexture* target, const Common::Rectangle<s32>& draw_rect, bool postfx)
 {
   GL_SCOPE_FMT("RenderDisplay: {}x{} at {},{}", draw_rect.left, draw_rect.top, draw_rect.GetWidth(),
@@ -1926,14 +2033,25 @@ bool GPU::RenderDisplay(GPUTexture* target, const Common::Rectangle<s32>& draw_r
 
   if (really_postfx)
   {
-    return PostProcessing::Apply(target, real_draw_rect.left, real_draw_rect.top, real_draw_rect.GetWidth(),
-                                 real_draw_rect.GetHeight(), m_display_texture_view_width,
-                                 m_display_texture_view_height);
+    if (!PostProcessing::Apply(target, real_draw_rect.left, real_draw_rect.top, real_draw_rect.GetWidth(),
+                               real_draw_rect.GetHeight(), m_display_texture_view_width,
+                               m_display_texture_view_height))
+    {
+      return false;
+    }
   }
-  else
+
+#ifdef __SWITCH__
+  // Full-window overlay goes on top of both the regular display and the
+  // post-processing output. Skip it for offscreen targets such as screenshots.
+  if (!target)
   {
-    return true;
+    UpdateDisplayOverlay();
+    DrawDisplayOverlay();
   }
+#endif
+
+  return true;
 }
 
 void GPU::DestroyDeinterlaceTextures()

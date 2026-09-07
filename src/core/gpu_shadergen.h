@@ -14,6 +14,7 @@ public:
   std::string GenerateDisplayVertexShader();
   std::string GenerateDisplayFragmentShader(bool clamp_uv);
   std::string GenerateDisplaySharpBilinearFragmentShader();
+  std::string GenerateDisplayOverlayFragmentShader();
 
   std::string GenerateInterleavedFieldExtractFragmentShader();
   std::string GenerateDeinterlaceWeaveFragmentShader();

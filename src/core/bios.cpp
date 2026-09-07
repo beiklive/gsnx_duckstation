@@ -285,6 +285,12 @@ std::optional<std::vector<u8>> BIOS::GetBIOSImage(ConsoleRegion region)
       break;
   }
 
+  // Older versions stored the translated choice label instead of an empty
+  // value for auto-detection. Accept those values so existing configurations
+  // continue to use BIOS directory scanning.
+  if (IsAutoDetectValue(bios_name))
+    bios_name.clear();
+
   if (bios_name.empty())
   {
     // auto-detect
@@ -295,9 +301,11 @@ std::optional<std::vector<u8>> BIOS::GetBIOSImage(ConsoleRegion region)
   std::optional<Image> image = LoadImageFromFile(Path::Combine(EmuFolders::Bios, bios_name).c_str());
   if (!image.has_value())
   {
-    Host::ReportFormattedErrorAsync("Error", TRANSLATE("HostInterface", "Failed to load configured BIOS file '%s'"),
-                                    bios_name.c_str());
-    return std::nullopt;
+    // The stored value may still be a stale label or otherwise unusable name.
+    // Fall back to directory scanning instead of failing outright.
+    Log_WarningPrintf("Configured BIOS '%s' not found, scanning '%s' instead.", bios_name.c_str(),
+                      EmuFolders::Bios.c_str());
+    return FindBIOSImageInDirectory(region, EmuFolders::Bios.c_str());
   }
 
   const ImageInfo* ii = GetInfoForImage(image.value());
@@ -305,6 +313,12 @@ std::optional<std::vector<u8>> BIOS::GetBIOSImage(ConsoleRegion region)
     Log_WarningPrintf("BIOS '%s' does not match region. This may cause issues.", bios_name.c_str());
 
   return image;
+}
+
+bool BIOS::IsAutoDetectValue(const std::string_view& value)
+{
+  return value.empty() || value == "Auto-Detect" ||
+         value == Host::TranslateToString("FullscreenUI", "Auto-Detect");
 }
 
 std::optional<std::vector<u8>> BIOS::FindBIOSImageInDirectory(ConsoleRegion region, const char* directory)

@@ -163,6 +163,11 @@ struct Settings
   bool display_show_inputs : 1 = false;
   bool display_show_enhancements : 1 = false;
   bool display_stretch_vertically : 1 = false;
+
+  // Display overlay (bezel image stretched over the full window).
+  bool display_overlay_enabled : 1 = false;
+  std::string display_overlay_directory = DEFAULT_DISPLAY_OVERLAY_DIRECTORY;
+  std::string display_overlay_file;
   float display_pre_frame_sleep_buffer = DEFAULT_DISPLAY_PRE_FRAME_SLEEP_BUFFER;
   float display_max_fps = DEFAULT_DISPLAY_MAX_FPS;
   float display_osd_scale = 100.0f;
@@ -505,6 +510,7 @@ struct Settings
   static constexpr u8 DEFAULT_DISPLAY_SCREENSHOT_QUALITY = 85;
   static constexpr float DEFAULT_DISPLAY_PRE_FRAME_SLEEP_BUFFER = 2.0f;
   static constexpr float DEFAULT_OSD_SCALE = 100.0f;
+  static constexpr const char* DEFAULT_DISPLAY_OVERLAY_DIRECTORY = "sdmc:/GBAStation/overlays/PS1";
 
   static constexpr u8 DEFAULT_CDROM_READAHEAD_SECTORS = 8;
   static constexpr CDROMMechaconVersion DEFAULT_CDROM_MECHACON_VERSION = CDROMMechaconVersion::VC1A;

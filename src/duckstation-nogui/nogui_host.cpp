@@ -10,6 +10,7 @@
 #include "scmversion/scmversion.h"
 
 #include "core/achievements.h"
+#include "core/bios.h"
 #include "core/controller.h"
 #include "core/fullscreen_ui.h"
 #include "core/game_list.h"
@@ -392,18 +393,33 @@ bool NoGUIHost::InitializeConfig(std::string settings_filename)
 #ifdef __SWITCH__
   GBAStationConfig::Load(&s_gbastation_config);
   GBAStationConfig::ApplyCoreSettings(s_gbastation_config, *s_base_settings_interface);
-
-  // GameDB savePath is metadata only. Do not migrate or use legacy per-game
-  // directories; keep both memory cards and save states in fixed locations.
-  s_base_settings_interface->SetStringValue("MemoryCards", "Directory",
-                                            GBAStation::SwitchPaths::MemoryCardsDirectory.data());
-  s_base_settings_interface->SetStringValue("Folders", "SaveStates",
-                                            GBAStation::SwitchPaths::SaveStatesDirectory.data());
 #endif
 
   s_use_chinese_translations.store(
     s_base_settings_interface->GetStringValue("Main", "Language", "zh-CN") == "zh-CN",
     std::memory_order_release);
+
+#ifdef __SWITCH__
+  // Older builds persisted the translated "Auto-Detect" choice label as a BIOS
+  // path. That label is not a filename, so remove such stale values so they
+  // are not written back into the settings file.
+  {
+    static constexpr const char* bios_keys[] = {"PathNTSCJ", "PathNTSCU", "PathPAL"};
+    bool changed = false;
+    for (const char* key : bios_keys)
+    {
+      const std::string value = s_base_settings_interface->GetStringValue("BIOS", key, "");
+      if (!value.empty() && BIOS::IsAutoDetectValue(value))
+      {
+        Log_InfoPrintf("Clearing stale BIOS auto-detect label from 'BIOS/%s'.", key);
+        s_base_settings_interface->DeleteValue("BIOS", key);
+        changed = true;
+      }
+    }
+    if (changed)
+      s_base_settings_interface->Save();
+  }
+#endif
 
   EmuFolders::LoadConfig(*s_base_settings_interface.get());
   EmuFolders::EnsureFoldersExist();

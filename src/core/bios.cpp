@@ -297,13 +297,14 @@ std::optional<std::vector<u8>> BIOS::GetBIOSImage(ConsoleRegion region)
     return FindBIOSImageInDirectory(region, EmuFolders::Bios.c_str());
   }
 
-  // try the configured path
-  std::optional<Image> image = LoadImageFromFile(Path::Combine(EmuFolders::Bios, bios_name).c_str());
+  // try the configured path (absolute paths are used as-is)
+  const std::string bios_path = Path::IsAbsolute(bios_name) ? bios_name : Path::Combine(EmuFolders::Bios, bios_name);
+  std::optional<Image> image = LoadImageFromFile(bios_path.c_str());
   if (!image.has_value())
   {
     // The stored value may still be a stale label or otherwise unusable name.
     // Fall back to directory scanning instead of failing outright.
-    Log_WarningPrintf("Configured BIOS '%s' not found, scanning '%s' instead.", bios_name.c_str(),
+    Log_WarningPrintf("Configured BIOS '%s' not found, scanning '%s' instead.", bios_path.c_str(),
                       EmuFolders::Bios.c_str());
     return FindBIOSImageInDirectory(region, EmuFolders::Bios.c_str());
   }

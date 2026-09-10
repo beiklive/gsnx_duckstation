@@ -192,45 +192,69 @@ bool Load(Values* values, std::string* loaded_path)
 
 void ApplyCoreSettings(const Values& values, SettingsInterface& settings)
 {
+  // 系统 / System
   SetString(settings, values, {"core.ps1.region", "ps1.region"}, "Console", "Region");
   SetBool(settings, values, {"core.ps1.enable8MBRAM", "ps1.enable8MBRAM"}, "Console", "Enable8MBRAM");
   SetBool(settings, values, {"core.ps1.enableCheats", "ps1.enableCheats"}, "Console", "EnableCheats");
+  SetBool(settings, values, {"core.ps1.disableAllEnhancements", "ps1.disableAllEnhancements"}, "Main",
+          "DisableAllEnhancements");
 
+  // 性能 / Emulation
   SetFloat(settings, values, {"core.ps1.emulationSpeed", "ps1.emulationSpeed"}, "Main", "EmulationSpeed");
-  SetBool(settings, values, {"core.ps1.syncToHostRefreshRate", "ps1.syncToHostRefreshRate"}, "Main", "SyncToHostRefreshRate");
+  SetFloat(settings, values, {"core.ps1.fastForwardSpeed", "ps1.fastForwardSpeed"}, "Main", "FastForwardSpeed");
+  SetFloat(settings, values, {"core.ps1.turboSpeed", "ps1.turboSpeed"}, "Main", "TurboSpeed");
+  SetBool(settings, values, {"core.ps1.syncToHostRefreshRate", "ps1.syncToHostRefreshRate"}, "Main",
+          "SyncToHostRefreshRate");
   SetUInt(settings, values, {"core.ps1.runaheadFrameCount", "ps1.runaheadFrameCount"}, "Main", "RunaheadFrameCount");
-  SetBool(settings, values, {"core.ps1.saveStateOnExit", "ps1.saveStateOnExit"}, "Main", "SaveStateOnExit");
-  SetBool(settings, values, {"core.ps1.createSaveStateBackups", "ps1.createSaveStateBackups"}, "Main", "CreateSaveStateBackups");
+  SetBool(settings, values, {"core.ps1.rewindEnable", "ps1.rewindEnable"}, "Main", "RewindEnable");
+  SetFloat(settings, values, {"core.ps1.rewindFrequency", "ps1.rewindFrequency"}, "Main", "RewindFrequency");
+  SetInt(settings, values, {"core.ps1.rewindSaveSlots", "ps1.rewindSaveSlots"}, "Main", "RewindSaveSlots");
 
-  SetString(settings, values, {"core.ps1.executionMode", "ps1.executionMode"}, "CPU", "ExecutionMode");
-  SetBool(settings, values, {"core.ps1.overclockEnable", "ps1.overclockEnable"}, "CPU", "OverclockEnable");
-  SetString(settings, values, {"core.ps1.fastmemMode", "ps1.fastmemMode"}, "CPU", "FastmemMode");
-
-  SetString(settings, values, {"core.ps1.renderer", "ps1.renderer"}, "GPU", "Renderer");
-  SetInt(settings, values, {"core.ps1.resolutionScale", "ps1.resolutionScale"}, "GPU", "ResolutionScale");
-  SetInt(settings, values, {"core.ps1.multisamples", "ps1.multisamples"}, "GPU", "Multisamples");
-  SetBool(settings, values, {"core.ps1.trueColor", "ps1.trueColor"}, "GPU", "TrueColor");
-  SetBool(settings, values, {"core.ps1.widescreenHack", "ps1.widescreenHack"}, "GPU", "WidescreenHack");
-  SetBool(settings, values, {"core.ps1.pgxpEnable", "ps1.pgxpEnable"}, "GPU", "PGXPEnable");
-  SetBool(settings, values, {"core.ps1.pgxpTextureCorrection", "ps1.pgxpTextureCorrection"}, "GPU", "PGXPTextureCorrection");
-
-  SetString(settings, values, {"core.ps1.deinterlacingMode", "ps1.deinterlacingMode"}, "Display", "DeinterlacingMode");
-  if (const std::string* crop = Find(values, {"core.ps1.cropMode", "ps1.cropMode"}))
-    settings.SetStringValue("Display", "CropMode", (*crop == "Auto") ? "None" : crop->c_str());
-  SetString(settings, values, {"core.ps1.aspectRatio", "ps1.aspectRatio"}, "Display", "AspectRatio");
-  SetBool(settings, values, {"core.ps1.vsync", "ps1.vsync"}, "Display", "VSync");
-  SetBool(settings, values, {"core.ps1.showFPS", "ps1.showFPS"}, "Display", "ShowFPS");
-
-  SetInt(settings, values, {"core.ps1.readaheadSectors", "ps1.readaheadSectors"}, "CDROM", "ReadaheadSectors");
-  SetInt(settings, values, {"core.ps1.readSpeedup", "ps1.readSpeedup"}, "CDROM", "ReadSpeedup");
-
+  // 音频 / Audio
+  SetInt(settings, values, {"core.ps1.outputVolume", "ps1.outputVolume"}, "Audio", "OutputVolume");
+  SetInt(settings, values, {"core.ps1.fastForwardVolume", "ps1.fastForwardVolume"}, "Audio", "FastForwardVolume");
+  SetBool(settings, values, {"core.ps1.outputMuted", "ps1.outputMuted"}, "Audio", "OutputMuted");
+  SetString(settings, values, {"core.ps1.backend", "ps1.backend"}, "Audio", "Backend");
+  SetString(settings, values, {"core.ps1.stretchMode", "ps1.stretchMode"}, "Audio", "StretchMode");
   SetUInt(settings, values, {"core.ps1.outputLatencyMS", "ps1.outputLatencyMS"}, "Audio", "OutputLatencyMS");
   SetUInt(settings, values, {"core.ps1.bufferMS", "ps1.bufferMS"}, "Audio", "BufferMS");
-  SetBool(settings, values, {"core.ps1.outputMuted", "ps1.outputMuted"}, "Audio", "OutputMuted");
 
-  SetString(settings, values, {"core.ps1.logLevel", "ps1.logLevel"}, "Logging", "LogLevel");
+  // 存档 / Save states
+  SetBool(settings, values, {"core.ps1.saveStateOnExit", "ps1.saveStateOnExit"}, "Main", "SaveStateOnExit");
+  SetBool(settings, values, {"core.ps1.createSaveStateBackups", "ps1.createSaveStateBackups"}, "Main",
+          "CreateSaveStateBackups");
+  SetBool(settings, values, {"core.ps1.loadDevicesFromSaveStates", "ps1.loadDevicesFromSaveStates"}, "Main",
+          "LoadDevicesFromSaveStates");
+
+  // 记忆卡 / Memory cards
+  SetString(settings, values, {"core.ps1.memoryCardDirectory", "ps1.memoryCardDirectory"}, "MemoryCards", "Directory");
+  SetBool(settings, values, {"core.ps1.usePlaylistTitle", "ps1.usePlaylistTitle"}, "MemoryCards", "UsePlaylistTitle");
+  SetString(settings, values, {"core.ps1.card1Type", "ps1.card1Type"}, "MemoryCards", "Card1Type");
+  SetString(settings, values, {"core.ps1.card2Type", "ps1.card2Type"}, "MemoryCards", "Card2Type");
+  SetString(settings, values, {"core.ps1.card1Path", "ps1.card1Path"}, "MemoryCards", "Card1Path");
+  SetString(settings, values, {"core.ps1.card2Path", "ps1.card2Path"}, "MemoryCards", "Card2Path");
+
+  // BIOS
+  SetString(settings, values, {"core.ps1.biosPathNTSCJ", "ps1.biosPathNTSCJ"}, "BIOS", "PathNTSCJ");
+  SetString(settings, values, {"core.ps1.biosPathNTSCU", "ps1.biosPathNTSCU"}, "BIOS", "PathNTSCU");
+  SetString(settings, values, {"core.ps1.biosPathPAL", "ps1.biosPathPAL"}, "BIOS", "PathPAL");
   SetBool(settings, values, {"core.ps1.ttyLogging", "ps1.ttyLogging"}, "BIOS", "TTYLogging");
   SetBool(settings, values, {"core.ps1.fastBoot", "ps1.fastBoot"}, "BIOS", "PatchFastBoot");
+
+  // 纹理替换 / Texture replacements
+  SetBool(settings, values, {"core.ps1.enableVRAMWriteReplacements", "ps1.enableVRAMWriteReplacements"},
+          "TextureReplacements", "EnableVRAMWriteReplacements");
+  SetBool(settings, values, {"core.ps1.preloadTextures", "ps1.preloadTextures"}, "TextureReplacements",
+          "PreloadTextures");
+  SetBool(settings, values, {"core.ps1.dumpVRAMWrites", "ps1.dumpVRAMWrites"}, "TextureReplacements", "DumpVRAMWrites");
+  SetBool(settings, values, {"core.ps1.dumpVRAMWriteForceAlphaChannel", "ps1.dumpVRAMWriteForceAlphaChannel"},
+          "TextureReplacements", "DumpVRAMWriteForceAlphaChannel");
+
+  // 日志 / Logging
+  SetString(settings, values, {"core.ps1.logLevel", "ps1.logLevel"}, "Logging", "LogLevel");
+  SetBool(settings, values, {"core.ps1.logToConsole", "ps1.logToConsole"}, "Logging", "LogToConsole");
+  SetBool(settings, values, {"core.ps1.logToDebug", "ps1.logToDebug"}, "Logging", "LogToDebug");
+  SetBool(settings, values, {"core.ps1.logToFile", "ps1.logToFile"}, "Logging", "LogToFile");
 }
 
 } // namespace GBAStationConfig
